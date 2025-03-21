@@ -2,6 +2,7 @@
 import numpy as np
 import plotly
 from plotly import graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 
 
@@ -29,7 +30,7 @@ def plot_system_2D(
     initial_point_size=8,
     legendgroup="trajs",
     secondary_legend_group="preds",
-    colorscale=plotly.express.colors.qualitative.Alphabet,
+    colorscale=px.colors.qualitative.Alphabet,
 ):
     trajs = np.asarray(trajs[:num_trajs_to_show])
     if trajs.ndim == 2:

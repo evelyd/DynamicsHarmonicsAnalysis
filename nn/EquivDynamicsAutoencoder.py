@@ -7,7 +7,7 @@ import torch
 from escnn.group import Representation
 from escnn.nn import FieldType, GeometricTensor
 from morpho_symm.nn.EMLP import EMLP
-from morpho_symm.utils.rep_theory_utils import isotypic_basis
+from morpho_symm.utils.abstract_harmonics_analysis import isotypic_basis
 from torch import Tensor
 
 from nn.DynamicsAutoEncoder import DAE
