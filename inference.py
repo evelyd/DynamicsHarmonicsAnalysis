@@ -2,18 +2,10 @@ import os
 import glob
 import torch
 from nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
-from nn.EquivDynamicsAutoencoder import EquivDAE
 from data.DynamicsDataModule import DynamicsDataModule
-from morpho_symm.utils.abstract_harmonics_analysis import isotypic_decomp_representation
 
-import escnn.nn as enn
-import escnn.gspaces as gspaces
-from escnn.group import Representation
-from escnn.nn import FieldType
-from morpho_symm.utils.robot_utils import load_symmetric_system
 from omegaconf import DictConfig
 from omegaconf.base import ContainerMetadata, Metadata
-from morpho_symm.nn.LightningModel import LightningModel
 from typing import Any
 from collections import defaultdict
 from omegaconf.nodes import AnyNode
@@ -23,14 +15,17 @@ from train_observables import get_model
 import hydra
 from hydra.utils import get_original_cwd
 from pathlib import Path
-import math
 
-torch.serialization.add_safe_globals([DictConfig, ContainerMetadata, Any, dict, defaultdict, AnyNode,
-                                      Metadata, ListConfig, list, int, float, str, bool])
+torch.serialization.add_safe_globals([DictConfig, Metadata, Any, defaultdict, ListConfig])
 
 @hydra.main(config_path='cfg', config_name='config', version_base='1.1')
 def main(cfg: DictConfig):
-    model_dir = "/home/evelyd/DHA/DynamicsHarmonicsAnalysis/dha/experiments/test/S=forward_minus_0_4-OS=5-G=K4xC2-H=30-EH=30_E-DAE-Obs_w=1.0-Orth_w=0.0-Act=ELU-B=True-BN=False-LR=0.001-L=5-128_system=mini_cheetah/"
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    model_dir = "experiments/test/S:forward_minus_0_4-OS:5-G:K4xC2-H:30-EH:30_E-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/"
+
+    model_dir = os.path.join(script_dir, model_dir)
 
     seed_dirs = [d for d in glob.glob(os.path.join(model_dir, "seed=*")) if os.path.isdir(d)]
     if not seed_dirs:
