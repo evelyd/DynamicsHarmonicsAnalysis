@@ -14,9 +14,9 @@ from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
 from omegaconf import DictConfig, OmegaConf
 
-from data.DynamicsDataModule import DynamicsDataModule
-from nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
-from utils.mysc import check_if_resume_experiment, class_from_name
+from dha.data.DynamicsDataModule import DynamicsDataModule
+from dha.nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
+from dha.utils.mysc import check_if_resume_experiment, class_from_name
 
 log = logging.getLogger(__name__)
 
@@ -187,7 +187,7 @@ def get_model(cfg, datamodule):
 
     if cfg.model.name.lower() in ["dae", "dae-aug"]:
         assert cfg.system.pred_horizon >= 1
-        from nn.DynamicsAutoEncoder import DAE
+        from dha.nn.DynamicsAutoEncoder import DAE
 
         model = DAE(
             state_dim=state_dim,
@@ -202,7 +202,7 @@ def get_model(cfg, datamodule):
         )
     elif cfg.model.name.lower() == "e-dae":
         assert cfg.system.pred_horizon >= 1
-        from nn.EquivDynamicsAutoencoder import EquivDAE
+        from dha.nn.EquivDynamicsAutoencoder import EquivDAE
 
         model = EquivDAE(
             state_rep=datamodule.state_type.representation,
@@ -217,7 +217,7 @@ def get_model(cfg, datamodule):
         )
     elif cfg.model.name.lower() == "e-dpnet":
         assert cfg.model.max_ck_window_length <= cfg.system.pred_horizon, "max_ck_window_length <= pred_horizon"
-        from nn.EquivDeepPojections import EquivDPNet
+        from dha.nn.EquivDeepPojections import EquivDPNet
 
         model = EquivDPNet(
             state_rep=datamodule.state_type.representation,
@@ -234,7 +234,7 @@ def get_model(cfg, datamodule):
         )
     elif cfg.model.name.lower() == "dpnet":
         assert cfg.model.max_ck_window_length <= cfg.system.pred_horizon, "max_ck_window_length <= pred_horizon"
-        from nn.DeepProjections import DPNet
+        from dha.nn.DeepProjections import DPNet
 
         model = DPNet(
             state_dim=datamodule.state_type.size,

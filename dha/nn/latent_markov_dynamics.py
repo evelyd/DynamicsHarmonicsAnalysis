@@ -6,9 +6,9 @@ from escnn.group import Representation
 from plotly.graph_objs import Figure
 from torch import Tensor
 
-from nn.markov_dynamics import MarkovDynamics
-from utils.losses_and_metrics import forecasting_loss_and_metrics
-from utils.mysc import batched_to_flat_trajectory, flat_to_batched_trajectory, traj_from_states
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.utils.losses_and_metrics import forecasting_loss_and_metrics
+from dha.utils.mysc import batched_to_flat_trajectory, flat_to_batched_trajectory, traj_from_states
 
 log = logging.getLogger(__name__)
 
@@ -232,7 +232,7 @@ class LatentMarkovDynamics(MarkovDynamics):
         if pred_obs_state_traj is not None:
             pred_obs_state_traj = pred_obs_state_traj.detach().cpu().numpy()
 
-        from utils.plotting import plot_two_panel_trajectories
+        from dha.utils.plotting import plot_two_panel_trajectories
         fig = plot_two_panel_trajectories(
             state_trajs=state_traj,
             pred_state_trajs=pred_state_traj,
@@ -243,7 +243,7 @@ class LatentMarkovDynamics(MarkovDynamics):
         )
         figs = dict(prediction=fig)
         if self.obs_state_dim == 3:
-            from utils.plotting import plot_system_3D
+            from dha.utils.plotting import plot_system_3D
             fig_3do = plot_system_3D(
                 trajectories=obs_state_traj,
                 secondary_trajectories=pred_obs_state_traj,
@@ -269,7 +269,7 @@ class LatentMarkovDynamics(MarkovDynamics):
             figs["state"] = fig_3ds
 
         if self.obs_state_dim == 2:
-            from utils.plotting import plot_system_2D
+            from dha.utils.plotting import plot_system_2D
             fig_2do = plot_system_2D(
                 trajs=obs_state_traj, secondary_trajs=pred_obs_state_traj, alpha=0.2, num_trajs_to_show=10
             )

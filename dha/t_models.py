@@ -15,13 +15,13 @@ from lightning.pytorch.loggers import WandbLogger
 from lightning_fabric import seed_everything
 from omegaconf import DictConfig, OmegaConf
 
-from data.DynamicsDataModule import DynamicsDataModule
-from nn.DeepProjections import DPNet
-from nn.DynamicsAutoEncoder import DAE
-from nn.EquivDeepPojections import EquivDPNet
-from nn.EquivDynamicsAutoencoder import EquivDAE
-from nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
-from utils.mysc import check_if_resume_experiment, class_from_name, format_scientific
+from dha.data.DynamicsDataModule import DynamicsDataModule
+from dha.nn.DeepProjections import DPNet
+from dha.nn.DynamicsAutoEncoder import DAE
+from dha.nn.EquivDeepPojections import EquivDPNet
+from dha.nn.EquivDynamicsAutoencoder import EquivDAE
+from dha.nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
+from dha.utils.mysc import check_if_resume_experiment, class_from_name, format_scientific
 
 log = logging.getLogger(__name__)
 

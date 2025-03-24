@@ -8,8 +8,8 @@ from escnn.group import Representation
 from escnn.nn import FieldType, GeometricTensor
 from torch import Tensor
 
-from nn.LinearDynamics import DmdSolver, LinearDynamics
-from utils.linear_algebra import full_rank_lstsq_symmetric
+from dha.nn.LinearDynamics import DmdSolver, LinearDynamics
+from dha.utils.linear_algebra import full_rank_lstsq_symmetric
 
 log = logging.getLogger(__name__)
 

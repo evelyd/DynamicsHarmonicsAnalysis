@@ -5,8 +5,8 @@ import torch
 from escnn.group import Representation
 from torch import Tensor
 
-from nn.markov_dynamics import MarkovDynamics
-from utils.linear_algebra import full_rank_lstsq
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.utils.linear_algebra import full_rank_lstsq
 
 log = logging.getLogger(__name__)
 

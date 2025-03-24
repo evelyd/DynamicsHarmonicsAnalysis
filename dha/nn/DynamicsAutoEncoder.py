@@ -6,10 +6,10 @@ import torch
 from morpho_symm.nn.MLP import MLP
 from torch import Tensor
 
-from nn.latent_markov_dynamics import LatentMarkovDynamics
-from nn.LinearDynamics import LinearDynamics
-from nn.markov_dynamics import MarkovDynamics
-from utils.losses_and_metrics import obs_state_space_metrics
+from dha.nn.latent_markov_dynamics import LatentMarkovDynamics
+from dha.nn.LinearDynamics import LinearDynamics
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.utils.losses_and_metrics import obs_state_space_metrics
 
 log = logging.getLogger(__name__)
 

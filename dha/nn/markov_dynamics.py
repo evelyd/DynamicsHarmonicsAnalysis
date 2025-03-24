@@ -5,8 +5,8 @@ import torch
 from escnn.group import Representation
 from torch import Tensor
 
-from utils.losses_and_metrics import forecasting_loss_and_metrics
-from utils.mysc import (
+from dha.utils.losses_and_metrics import forecasting_loss_and_metrics
+from dha.utils.mysc import (
     batched_to_flat_trajectory,
     flat_to_batched_trajectory,
     random_orthogonal_matrix,

@@ -1,8 +1,8 @@
 import os
 import glob
 import torch
-from nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
-from data.DynamicsDataModule import DynamicsDataModule
+from dha.nn.LightningLatentMarkovDynamics import LightLatentMarkovDynamics
+from dha.data.DynamicsDataModule import DynamicsDataModule
 
 from omegaconf import DictConfig
 from omegaconf.base import ContainerMetadata, Metadata
@@ -10,7 +10,7 @@ from typing import Any
 from collections import defaultdict
 from omegaconf.nodes import AnyNode
 from omegaconf.listconfig import ListConfig
-from train_observables import get_model
+from dha.train_observables import get_model
 
 import hydra
 from hydra.utils import get_original_cwd

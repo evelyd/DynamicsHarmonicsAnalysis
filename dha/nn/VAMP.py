@@ -2,11 +2,11 @@ import logging
 from typing import Iterable
 
 import torch
-from src.RobotEquivariantNN.nn.EMLP import MLP
+from dha.src.RobotEquivariantNN.nn.EMLP import MLP
 
-from data.DynamicsRecording import CTRLS, STATES
-from nn.EquivariantLinearDynamics import EquivariantLinearDynamics
-from utils.losses_and_metrics import observation_dynamics_error
+from dha.data.DynamicsRecording import CTRLS, STATES
+from dha.nn.EquivariantLinearDynamics import EquivariantLinearDynamics
+from dha.utils.losses_and_metrics import observation_dynamics_error
 
 log = logging.getLogger(__name__)
 

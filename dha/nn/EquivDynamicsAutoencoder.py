@@ -10,11 +10,11 @@ from morpho_symm.nn.EMLP import EMLP
 from morpho_symm.utils.abstract_harmonics_analysis import isotypic_basis
 from torch import Tensor
 
-from nn.DynamicsAutoEncoder import DAE
-from nn.EquivLinearDynamics import EquivLinearDynamics
-from nn.markov_dynamics import MarkovDynamics
-from utils.losses_and_metrics import iso_metrics_2_obs_space_metrics, obs_state_space_metrics
-from utils.mysc import batched_to_flat_trajectory
+from dha.nn.DynamicsAutoEncoder import DAE
+from dha.nn.EquivLinearDynamics import EquivLinearDynamics
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.utils.losses_and_metrics import iso_metrics_2_obs_space_metrics, obs_state_space_metrics
+from dha.utils.mysc import batched_to_flat_trajectory
 
 log = logging.getLogger(__name__)
 

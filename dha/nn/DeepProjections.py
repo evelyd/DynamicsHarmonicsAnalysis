@@ -7,15 +7,15 @@ from morpho_symm.nn.MLP import MLP
 from torch import Tensor
 from torch.utils.data import DataLoader
 
-from nn.latent_markov_dynamics import LatentMarkovDynamics
-from nn.LinearDynamics import LinearDynamics
-from nn.markov_dynamics import MarkovDynamics
-from nn.ObservableNet import ObservableNet
-from utils.linear_algebra import full_rank_lstsq
-from utils.losses_and_metrics import (
+from dha.nn.latent_markov_dynamics import LatentMarkovDynamics
+from dha.nn.LinearDynamics import LinearDynamics
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.nn.ObservableNet import ObservableNet
+from dha.utils.linear_algebra import full_rank_lstsq
+from dha.utils.losses_and_metrics import (
     obs_state_space_metrics,
 )
-from utils.mysc import (
+from dha.utils.mysc import (
     batched_to_flat_trajectory,
     states_from_traj,
 )

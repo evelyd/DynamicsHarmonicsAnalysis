@@ -11,7 +11,7 @@ from lightning import LightningDataModule
 from morpho_symm.data.DynamicsRecording import DynamicsRecording, get_dynamics_dataset, get_train_test_val_file_paths
 from torch.utils.data import DataLoader
 
-from utils.mysc import traj_from_states
+from dha.utils.mysc import traj_from_states
 
 log = logging.getLogger(__name__)
 
@@ -325,7 +325,7 @@ class DynamicsDataModule(LightningDataModule):
             next_state = batch["next_state"]
             state_traj = traj_from_states(state, next_state)
 
-            from utils.plotting import plot_trajectories
+            from dha.utils.plotting import plot_trajectories
 
             fig = plot_trajectories(
                 state_traj,

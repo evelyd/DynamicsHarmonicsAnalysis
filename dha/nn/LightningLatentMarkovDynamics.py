@@ -11,10 +11,10 @@ import wandb
 from lightning import LightningModule
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 
-from nn.EquivLinearDynamics import EquivLinearDynamics
-from nn.latent_markov_dynamics import LatentMarkovDynamics
-from nn.LinearDynamics import LinearDynamics
-from nn.markov_dynamics import MarkovDynamics
+from dha.nn.EquivLinearDynamics import EquivLinearDynamics
+from dha.nn.latent_markov_dynamics import LatentMarkovDynamics
+from dha.nn.LinearDynamics import LinearDynamics
+from dha.nn.markov_dynamics import MarkovDynamics
 
 log = logging.getLogger(__name__)
 

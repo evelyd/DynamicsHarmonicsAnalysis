@@ -17,13 +17,13 @@ from morpho_symm.utils.rep_theory_utils import isotypic_basis
 from torch import Tensor
 from tqdm import tqdm
 
-from data.DynamicsDataModule import DynamicsDataModule
-from nn.DeepProjections import DPNet
-from nn.EquivLinearDynamics import EquivLinearDynamics
-from nn.markov_dynamics import MarkovDynamics
-from nn.ObservableNet import ObservableNet
-from utils.linear_algebra import full_rank_lstsq_symmetric
-from utils.losses_and_metrics import (
+from dha.data.DynamicsDataModule import DynamicsDataModule
+from dha.nn.DeepProjections import DPNet
+from dha.nn.EquivLinearDynamics import EquivLinearDynamics
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.nn.ObservableNet import ObservableNet
+from dha.utils.linear_algebra import full_rank_lstsq_symmetric
+from dha.utils.losses_and_metrics import (
     iso_metrics_2_obs_space_metrics,
     obs_state_space_metrics,
 )

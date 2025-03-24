@@ -1,7 +1,7 @@
 import os
 import glob
 import torch
-from nn.EquivDynamicsAutoencoder import EquivDAE
+from dha.nn.EquivDynamicsAutoencoder import EquivDAE
 from morpho_symm.utils.robot_utils import load_symmetric_system
 from morpho_symm.utils.rep_theory_utils import group_rep_from_gens
 
