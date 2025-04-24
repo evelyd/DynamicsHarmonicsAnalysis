@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import pstats
+import time
 from pathlib import Path
 
 import hydra
@@ -66,7 +67,14 @@ def main(cfg: DictConfig):
             action_obs=cfg.system.get("action_obs", None),
             standardize=cfg.system.standardize,
         )
-        datamodule.prepare_data()
+        state_mean_var_dict = datamodule.prepare_data()
+
+        # Save the state mean and variance to a file
+        mean_var_file = seed_path / "state_mean_var.npy"
+        np.save(mean_var_file, state_mean_var_dict)
+        log.info(f"Saved state_mean and state_var to {mean_var_file}")
+        input("saved state_mean and state_var")
+
         if cfg.system.state_dim != "??":
             assert datamodule.state_type.size == cfg.system.state_dim, (
                 f"State dim mismatch {datamodule.state_type.size} != {cfg.system.state_dim}"

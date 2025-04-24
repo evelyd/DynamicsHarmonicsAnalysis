@@ -67,7 +67,7 @@ class DynamicsDataModule(LightningDataModule):
         self.device = device
         self.train_dataset, self.val_dataset, self.test_dataset = None, None, None
 
-    def prepare_data(self):
+    def prepare_data(self) -> dict:
         if self.prepared:
             self.train_dataset = self.train_dataset.shuffle(buffer_size=self.train_dataset.dataset_size // 4)
             log.info("Train dataset reshuffled")
@@ -210,6 +210,8 @@ class DynamicsDataModule(LightningDataModule):
             self.action_field_type = FieldType(self.gspace, representations=action_reps)
 
         log.info(f"Data preparation done in {time.time() - start_time:.2f} [s]")
+
+        return {"state_mean": self.state_mean, "state_var": self.state_var}
 
     def setup(self, stage: str) -> None:
         log.info(f"Setting up {stage} dataset")
