@@ -96,6 +96,8 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     base_vel = state[:, :3]  # Rep: rep_Rd
     base_ang_vel = state[:, 3:6]  # Rep: rep_euler_xyz
     projected_gravity = state[:, 6:9] # Rep: red Rd
+    ref_projected_gravity = np.array([0, 0, -1.0])  # Rep: rep_Rd
+    projected_gravity_error = projected_gravity - ref_projected_gravity
     velocity_commands_xy = state[:, 9:11] # Rep: Rd for xy, euler xyz for heading? idk
     ref_base_lin_vel = np.hstack([velocity_commands_xy, np.zeros((velocity_commands_xy.shape[0], 1))]) # set ref lin z vel to 0
     base_vel_error = base_vel - ref_base_lin_vel
@@ -154,6 +156,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     base_z_error = base_z_error[::dt_subsample]
     base_vel = base_vel[::dt_subsample]
     projected_gravity = projected_gravity[::dt_subsample]
+    projected_gravity_error = projected_gravity_error[::dt_subsample]
     base_vel_error = base_vel_error[::dt_subsample]
     base_ori = base_ori[::dt_subsample]
     base_ori_R_flat = base_ori_R_flat[::dt_subsample]
@@ -175,6 +178,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
             base_vel=base_vel[None, ...].astype(np.float32),
             base_vel_error=base_vel_error[None, ...].astype(np.float32),
             projected_gravity=projected_gravity[None, ...].astype(np.float32),
+            projected_gravity_error=projected_gravity_error[None, ...].astype(np.float32),
             base_ori=base_ori[None, ...].astype(np.float32),
             base_ori_R_flat=base_ori_R_flat[None, ...].astype(np.float32),
             base_ang_vel=base_ang_vel[None, ...].astype(np.float32),
@@ -205,6 +209,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
             base_vel=rep_Rd,
             base_vel_error=rep_Rd,
             projected_gravity=rep_Rd,
+            projected_gravity_error=rep_Rd,
             base_ori=rep_euler_xyz,
             base_ori_R_flat=rep_rot_flat,
             base_ang_vel=rep_euler_xyz,
