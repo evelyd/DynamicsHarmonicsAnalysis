@@ -35,7 +35,7 @@ def get_Rd_signals_on_kin_subchains(G: Group, rep_kin_three: Representation):
     return rep_F
 
 
-def convert_mini_cheetah_isaaclab_recordings(data_path: Path):
+def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     """Convertion script for the recordings of observations from the Mini-Cheetah Robot.
 
     This function takes recordings stored into a single numpy array of shape (time, state_dim) where the state is
@@ -56,11 +56,19 @@ def convert_mini_cheetah_isaaclab_recordings(data_path: Path):
         2. Defines the group representation for each observation.
         3. Changes joint position to Pinocchio convention, used by MorphoSymm.
     """
-    assert data_path.exists(), f"Path {data_path.absolute()} does not exist"
-    state = np.load(data_path, allow_pickle=True)
-    state = np.concatenate([traj['obs'] for traj in state], axis=0)
-    input(state.shape)
+    all_data = []
+    for data_path in data_paths:
+        assert data_path.exists(), f"Path {data_path.absolute()} does not exist"
+        data = np.load(data_path, allow_pickle=True)
+        all_data.append(np.array([traj['obs'] for traj in data]))
+    print(f"Shape of all data: {all_data[0].shape}")
+    state_batched = np.concatenate(all_data, axis=1)
+    # Reshape the data so that the first dimension is end to end
+    state = state_batched.transpose((1,0,2)).reshape(state_batched.shape[0] * state_batched.shape[1], -1)
     assert state.shape[-1] == 53, f"Expected {53} dimensions in the state, got {state.shape[-1]}"
+
+    dt = 0.02  # Time step of the simulation
+
     # Load the Mini-Cheetah robot
     robot, G = load_symmetric_system(robot_name="mini_cheetah")
     rep_Q_js = G.representations["Q_js"]  # Representation on joint space position coordinates
@@ -160,7 +168,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_path: Path):
     data_recording = DynamicsRecording(
         description=f"Mini Cheetah {data_path.parent.parent.stem}",
         info=dict(num_traj=1, trajectory_length=state.shape[0]),
-        dynamics_parameters=dict(dt=0.02 * dt_subsample, group=dict(group_name=G.name, group_order=G.order())),
+        dynamics_parameters=dict(dt=dt * dt_subsample, group=dict(group_name=G.name, group_order=G.order())),
         recordings=dict(
             base_z=base_z[None, ...].astype(np.float32),
             base_z_error=base_z_error[None, ...].astype(np.float32),
@@ -241,7 +249,6 @@ if __name__ == "__main__":
     modes = ["2025-04-18_09-13-49"]
     for terrain in terrains:
         for mode in modes:
-            data_path = Path(
-                f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/obs_action_pairs.npy"
-            )
-            convert_mini_cheetah_isaaclab_recordings(data_path)
+            data_paths = [Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/obs_action_pairs.npy"),
+                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/model0_obs_action_pairs.npy")]
+            convert_mini_cheetah_isaaclab_recordings(data_paths)
