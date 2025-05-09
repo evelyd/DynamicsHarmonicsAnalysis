@@ -16,7 +16,7 @@ action_obs: []
 
 # dt = 0.0012 s   this is the average delta time between observations.
 frames_per_state:  1                                 # Number of time-frames to use as a Markov Process state time step
-pred_horizon:      1 #30                                # Number (or percentage) of Markov Process state time steps to predict into the future
+pred_horizon:      5 #30                                # Number (or percentage) of Markov Process state time steps to predict into the future
 eval_pred_horizon: ${system.pred_horizon}            # Number (or percentage) of Markov Process state time steps to predict into the future
 test_pred_horizon: 100
 
@@ -24,6 +24,7 @@ recording_type: isaaclab # raysim
 terrain: flat
 # dynamic_mode: forward_minus_0_4
 dynamic_mode: 2025-04-18_09-13-49
+# dynamic_mode: 2025-05-01_22-17-31
 
 data_path: '${system.name}/${system.recording_type}_recordings/${system.terrain}/${system.dynamic_mode}'
 

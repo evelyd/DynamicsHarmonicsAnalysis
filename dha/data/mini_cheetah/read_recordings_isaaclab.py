@@ -104,7 +104,8 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     velocity_commands_z = state[:, 11][:, np.newaxis]
     ref_base_ang_vel = np.hstack([np.zeros((base_ang_vel.shape[0], 2)), velocity_commands_z])
     base_ang_vel_error = base_ang_vel - ref_base_ang_vel
-    ref_base_z = 0.5 #TODO this value is hardcoded for now to avoid needing to collect the data yet again
+    initial_base_z = state[0, 48]  # Use the first value in a traj as the reference
+    ref_base_z = initial_base_z #TODO this value is hardcoded for now to avoid needing to collect the data yet again
     base_z = state[:, 48][:, np.newaxis]  # Rep: rep_z
     base_z_error = base_z - ref_base_z
     base_ori = Rotation.from_quat(state[:, 49:53], scalar_first=True).as_euler('xyz')  # Rep: rep_euler_xyz
