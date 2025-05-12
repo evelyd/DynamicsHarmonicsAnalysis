@@ -40,17 +40,14 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
 
     This function takes recordings stored into a single numpy array of shape (time, state_dim) where the state is
     defined as [state]:
-        base_velocity,                           (3,)
-        base_angular_velocity,                   (3,)
-        projected_gravity,                       (3,)
         velocity_commands,                       (3,)
         joint position,                          (12,)
         joint velocities,                        (12,)
         actions,                                 (12,)
-        base z,                                  (1,)
-        base_quat,                               (4,)
+        imu angular velocity,                    (3,)
+        imu orientation (proj gravity vec),      (3,)
         _________________________________________________________
-        TOTAL:                                    53. Dimensions
+        TOTAL:                                    45. Dimensions
     The conversion process takes these measurements and does the following:
         1. Stores them into a DynamicsRecording format, for easy loading
         2. Defines the group representation for each observation.
@@ -65,7 +62,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     state_batched = np.concatenate(all_data, axis=1)
     # Reshape the data so that the first dimension is end to end
     state = state_batched.transpose((1,0,2)).reshape(state_batched.shape[0] * state_batched.shape[1], -1)
-    assert state.shape[-1] == 53, f"Expected {53} dimensions in the state, got {state.shape[-1]}"
+    assert state.shape[-1] == 45, f"Expected {45} dimensions in the state, got {state.shape[-1]}"
 
     dt = 0.02  # Time step of the simulation
 
@@ -79,6 +76,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     rep_kin_three = get_kinematic_three_rep(G)  # Permutation of legs
     rep_Rd_on_limbs = get_Rd_signals_on_kin_subchains(G, rep_kin_three)  # Representation on R^3 on legs
 
+    rep_xy = rep_z = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[:2, :2].reshape((2, 2)) for h in G.elements if h != G.identity})
     rep_z = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
     rep_z.name = "base_z"
 
@@ -93,33 +91,17 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     # Define observation variables and their group representations
 
     # Base body observations ___________________________________________________________________________________________
-    base_vel = state[:, :3]  # Rep: rep_Rd
-    base_ang_vel = state[:, 3:6]  # Rep: rep_euler_xyz
-    projected_gravity = state[:, 6:9] # Rep: red Rd
-    ref_projected_gravity = np.array([0, 0, -1.0])  # Rep: rep_Rd
-    projected_gravity_error = projected_gravity - ref_projected_gravity
-    velocity_commands_xy = state[:, 9:11] # Rep: Rd for xy, euler xyz for heading? idk
-    ref_base_lin_vel = np.hstack([velocity_commands_xy, np.zeros((velocity_commands_xy.shape[0], 1))]) # set ref lin z vel to 0
-    base_vel_error = base_vel - ref_base_lin_vel
-    velocity_commands_z = state[:, 11][:, np.newaxis]
-    ref_base_ang_vel = np.hstack([np.zeros((base_ang_vel.shape[0], 2)), velocity_commands_z])
-    base_ang_vel_error = base_ang_vel - ref_base_ang_vel
-    ref_base_z = 0.5 #TODO this value is hardcoded for now to avoid needing to collect the data yet again
-    base_z = state[:, 48][:, np.newaxis]  # Rep: rep_z
-    base_z_error = base_z - ref_base_z
-    base_ori = Rotation.from_quat(state[:, 49:53], scalar_first=True).as_euler('xyz')  # Rep: rep_euler_xyz
-    # Define the representation of the rotation matrix R that transforms the base orientation.
-    rep_rot_flat = {}
-    # R = Rotation.from_euler("xyz", base_ori[2]).as_matrix()
-    for h in G.elements:
-        rep_rot_flat[h] = np.kron(rep_Rd(h), rep_Rd(~h).T)
-    rep_rot_flat = escnn_representation_form_mapping(G, rep_rot_flat)
-    rep_rot_flat.name = "SO(3)_flat"
-    base_ori_R = np.asarray([Rotation.from_euler("xyz", ori).as_matrix() for ori in base_ori])
-    base_ori_R_flat = base_ori_R.reshape(base_ori.shape[0], -1)
+    velocity_commands_xy = state[:, :2]  # Rep: rep_xy
+    velocity_commands_z = state[:, 2][:, np.newaxis]
+    velocity_commands_angular = np.hstack((np.zeros((velocity_commands_z.shape[0], 2)), velocity_commands_z)) # Rep: rep_euler_xyz
+    imu_ang_vel = state[:, 39:42]  # Rep: rep_euler_xyz
+    imu_ang_vel_error = imu_ang_vel - velocity_commands_angular
+    imu_orientation = state[:, 42:45] # Rep: rep_euler_xyz
+    imu_orientation_ref = np.array([0.0, 0.0, -1.0])  # Reference orientation for the IMU
+    imu_orientation_error = imu_orientation - imu_orientation_ref
 
     # Joint-Space observations _________________________________________________________________________________________
-    joint_vel = state[:, 24:36]
+    joint_vel = state[:, 15:27]  # Rep: rep_Q_js
     # Reorder the joint velocities to match the morphosymm order
     joint_vel = joint_vel[:, joint_order_indices]
     # Joint positions need to be converted to the unit circle parametrization [cos(q), sin(q)].
@@ -128,7 +110,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     robot.configure_bullet_simulation(bullet_client=bullet_client)
     # Get zero reference position.
     q0, _ = robot.pin2sim(robot._q0, np.zeros(robot.nv))
-    q_js_ms_rel = state[:, 12:24] # the raw joitn position that comes from isaaclab is the relative one (relative to isaaclab default joint pos) where qrrel = qabs - q0isaaclab
+    q_js_ms_rel = state[:, 3:15] # the raw joitn position that comes from isaaclab is the relative one (relative to isaaclab default joint pos) where qrrel = qabs - q0isaaclab
     q_js_ms = q_js_ms_rel + q0_isaaclab  # Compute the absolute joint position
     # q_js_ms = q_js_ms_rel + q0[7:]  # Add offset to the measurements from UMich
     # Reorder joint positions to match the morphosymm order
@@ -140,7 +122,7 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     q_js_unit_circle_t = q_js_unit_circle_t.reshape(q_js_unit_circle_t.shape[0], -1)
     joint_pos_S1, joint_pos_rep = q_js_unit_circle_t, rep_Q_js  # Joints in angle not unit circle representation
     joint_pos = q_js_ms  # Joints in angle representation
-    action_joint_pos = state[:, 36:48]  # Rep: rep_TqQ_js
+    action_joint_pos = state[:, 27:39]  # Rep: rep_TqQ_js
     # Reorder action joint positions to match the morphosymm order
     action_joint_pos = action_joint_pos[:, joint_order_indices] # the action joint positions are already absolute
     action_joint_pos = action_joint_pos + q0[7:]  # Add offset to the measurements
@@ -152,16 +134,12 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
 
     # Subsample the data by skippig by ignoring odd frames. ============================================================
     dt_subsample = 1
-    base_z = base_z[::dt_subsample]
-    base_z_error = base_z_error[::dt_subsample]
-    base_vel = base_vel[::dt_subsample]
-    projected_gravity = projected_gravity[::dt_subsample]
-    projected_gravity_error = projected_gravity_error[::dt_subsample]
-    base_vel_error = base_vel_error[::dt_subsample]
-    base_ori = base_ori[::dt_subsample]
-    base_ori_R_flat = base_ori_R_flat[::dt_subsample]
-    base_ang_vel = base_ang_vel[::dt_subsample]
-    base_ang_vel_error = base_ang_vel_error[::dt_subsample]
+    velocity_commands_xy = velocity_commands_xy[::dt_subsample]
+    velocity_commands_z = velocity_commands_z[::dt_subsample]
+    imu_ang_vel = imu_ang_vel[::dt_subsample]
+    imu_ang_vel_error = imu_ang_vel_error[::dt_subsample]
+    imu_orientation = imu_orientation[::dt_subsample]
+    imu_orientation_error = imu_orientation_error[::dt_subsample]
     joint_pos = joint_pos[::dt_subsample]
     joint_pos_S1 = joint_pos_S1[::dt_subsample]
     joint_vel = joint_vel[::dt_subsample]
@@ -173,16 +151,12 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
         info=dict(num_traj=1, trajectory_length=state.shape[0]),
         dynamics_parameters=dict(dt=dt * dt_subsample, group=dict(group_name=G.name, group_order=G.order())),
         recordings=dict(
-            base_z=base_z[None, ...].astype(np.float32),
-            base_z_error=base_z_error[None, ...].astype(np.float32),
-            base_vel=base_vel[None, ...].astype(np.float32),
-            base_vel_error=base_vel_error[None, ...].astype(np.float32),
-            projected_gravity=projected_gravity[None, ...].astype(np.float32),
-            projected_gravity_error=projected_gravity_error[None, ...].astype(np.float32),
-            base_ori=base_ori[None, ...].astype(np.float32),
-            base_ori_R_flat=base_ori_R_flat[None, ...].astype(np.float32),
-            base_ang_vel=base_ang_vel[None, ...].astype(np.float32),
-            base_ang_vel_error=base_ang_vel_error[None, ...].astype(np.float32),
+            velocity_commands_xy=velocity_commands_xy[None, ...].astype(np.float32),
+            # velocity_commands_z=velocity_commands_z[None, ...].astype(np.float32),
+            imu_ang_vel=imu_ang_vel[None, ...].astype(np.float32),
+            imu_ang_vel_error=imu_ang_vel_error[None, ...].astype(np.float32),
+            imu_orientation=imu_orientation[None, ...].astype(np.float32),
+            imu_orientation_error=imu_orientation_error[None, ...].astype(np.float32),
             joint_pos=joint_pos[None, ...].astype(np.float32),
             joint_pos_S1=joint_pos_S1[None, ...].astype(np.float32),
             joint_vel=joint_vel[None, ...].astype(np.float32),
@@ -192,8 +166,6 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
         state_obs=(
             "joint_pos",
             "joint_vel",
-            "base_z",
-            "base_ori",
         ),
         action_obs=("action_joint_pos",),
         obs_representations=dict(
@@ -203,17 +175,12 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
             action_joint_pos=rep_TqQ_js,
             a_joint_pos_S1=rep_Q_js,
             # Base body observations
-            base_pos=rep_Rd,
-            base_z=rep_z,
-            base_z_error=rep_z,
-            base_vel=rep_Rd,
-            base_vel_error=rep_Rd,
-            projected_gravity=rep_Rd,
-            projected_gravity_error=rep_Rd,
-            base_ori=rep_euler_xyz,
-            base_ori_R_flat=rep_rot_flat,
-            base_ang_vel=rep_euler_xyz,
-            base_ang_vel_error=rep_euler_xyz,
+            velocity_commands_xy=rep_xy,
+            # velocity_commands_z=rep_euler_xyz, # idk what the rep would be
+            imu_orientation=rep_Rd,
+            imu_orientation_error=rep_Rd,
+            imu_ang_vel=rep_euler_xyz,
+            imu_ang_vel_error=rep_euler_xyz,
         ),
         # Ensure the angles in the unit circle are not disturbed by the normalization.
         obs_moments=dict(
@@ -225,10 +192,10 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
                 np.zeros(a_js_unit_circle_t.shape[-1]),
                 np.ones(a_js_unit_circle_t.shape[-1]),
             ),
-            base_ori_R_flat=(
-                np.zeros(base_ori_R_flat.shape[-1]),
-                np.ones(base_ori_R_flat.shape[-1]),
-            ),
+            # base_ori_R_flat=(
+            #     np.zeros(base_ori_R_flat.shape[-1]),
+            #     np.ones(base_ori_R_flat.shape[-1]),
+            # ),
         ),
     )
 
@@ -250,10 +217,14 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
 
 
 if __name__ == "__main__":
-    terrains = ["flat"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
-    modes = ["2025-04-18_09-13-49"]
+    # terrains = ["flat"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
+    terrains = ["curriculum"]
+    # modes = ["2025-05-09_13-19-56"]
+    modes = ["mixed_v0_v1"]
     for terrain in terrains:
         for mode in modes:
-            data_paths = [Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/obs_action_pairs.npy"),
-                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/model0_obs_action_pairs.npy")]
+            data_paths = [Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v0_obs_action_pairs.npy"),
+                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v0_model0_obs_action_pairs.npy"),
+                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v1_obs_action_pairs.npy"),
+                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v1_model0_obs_action_pairs.npy")]
             convert_mini_cheetah_isaaclab_recordings(data_paths)
