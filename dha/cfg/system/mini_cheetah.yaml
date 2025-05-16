@@ -11,7 +11,8 @@ standardize: True
 
 obs_state_ratio: 5                             # obs_state_dim = obs_state_ratio * state_dim
 
-state_obs: ['velocity_commands_xy', 'joint_pos_S1', 'joint_vel', 'a_joint_pos_S1', 'imu_ang_vel_error', 'imu_orientation_error']
+# state_obs: ['velocity_commands_xy', 'joint_pos_S1', 'joint_vel', 'a_joint_pos_S1', 'imu_ang_vel_error', 'imu_orientation_error']
+state_obs: ['joint_pos_S1', 'joint_vel', 'imu_ang_vel', 'imu_orientation']
 action_obs: []
 
 # dt = 0.0012 s   this is the average delta time between observations.
@@ -26,7 +27,9 @@ terrain: curriculum
 # dynamic_mode: forward_minus_0_4
 # dynamic_mode: 2025-04-18_09-13-49
 # dynamic_mode: 2025-05-09_13-19-56
-dynamic_mode: mixed_v0_v1
+# dynamic_mode: mixed_v0_v1
+# dynamic_mode: 2025-05-12_10-38-23
+dynamic_mode: 2025-05-11_08-53-29
 
 data_path: '${system.name}/${system.recording_type}_recordings/${system.terrain}/${system.dynamic_mode}'
 

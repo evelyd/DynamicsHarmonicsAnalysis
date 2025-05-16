@@ -220,11 +220,10 @@ if __name__ == "__main__":
     # terrains = ["flat"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
     terrains = ["curriculum"]
     # modes = ["2025-05-09_13-19-56"]
-    modes = ["mixed_v0_v1"]
+    # modes = ["mixed_v0_v1"]
+    # modes = ["2025-05-12_10-38-23"]
+    modes = ["2025-05-11_08-53-29"]
     for terrain in terrains:
         for mode in modes:
-            data_paths = [Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v0_obs_action_pairs.npy"),
-                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v0_model0_obs_action_pairs.npy"),
-                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v1_obs_action_pairs.npy"),
-                          Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording/v1_model0_obs_action_pairs.npy")]
+            data_paths = list(Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording").glob("*.npy"))
             convert_mini_cheetah_isaaclab_recordings(data_paths)
