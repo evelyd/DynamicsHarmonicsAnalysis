@@ -47,8 +47,8 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
         joint position,                          (12,)
         joint velocities,                        (12,)
         actions,                                 (12,)
-        base z,                                  (1,)
-        base_quat,                               (4,)
+        base z,                                  (1,) [Optional]
+        base_quat,                               (4,) [Optional]
         _________________________________________________________
         TOTAL:                                    53. Dimensions
     The conversion process takes these measurements and does the following:
@@ -57,15 +57,20 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
         3. Changes joint position to Pinocchio convention, used by MorphoSymm.
     """
     all_data = []
+    all_action_data = []
     for data_path in data_paths:
         assert data_path.exists(), f"Path {data_path.absolute()} does not exist"
         data = np.load(data_path, allow_pickle=True)
         all_data.append(np.array([traj['obs'] for traj in data]))
+        all_action_data.append(np.array([traj['actions'] for traj in data]))
     print(f"Shape of all data: {all_data[0].shape}")
     state_batched = np.concatenate(all_data, axis=1)
+    action_batched = np.concatenate(all_action_data, axis=1)
     # Reshape the data so that the first dimension is end to end
     state = state_batched.transpose((1,0,2)).reshape(state_batched.shape[0] * state_batched.shape[1], -1)
-    assert state.shape[-1] == 53, f"Expected {53} dimensions in the state, got {state.shape[-1]}"
+    action = action_batched.transpose((1,0,2)).reshape(action_batched.shape[0] * action_batched.shape[1], -1)
+    num_states = state.shape[-1]
+    assert num_states == 48 or num_states == 53, f"Expected 48 or 53 dimensions in the state, got {state.shape[-1]}"
 
     dt = 0.02  # Time step of the simulation
 
@@ -81,6 +86,10 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
 
     rep_z = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
     rep_z.name = "base_z"
+    rep_xy = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[:2, :2].reshape((2, 2)) for h in G.elements if h != G.identity})
+    rep_xy.name = "base_xy"
+    rep_euler_z = group_rep_from_gens(G, rep_H={h: rep_euler_xyz(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
+    rep_euler_z.name = "euler_z"
 
     # Create a mapping from current joint order to morphosymm order
     usd_joint_order = ['FL_hip_joint', 'FR_hip_joint', 'RL_hip_joint', 'RR_hip_joint', 'FL_thigh_joint', 'FR_thigh_joint', 'RL_thigh_joint', 'RR_thigh_joint', 'FL_calf_joint', 'FR_calf_joint', 'RL_calf_joint', 'RR_calf_joint']
@@ -104,20 +113,22 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     velocity_commands_z = state[:, 11][:, np.newaxis]
     ref_base_ang_vel = np.hstack([np.zeros((base_ang_vel.shape[0], 2)), velocity_commands_z])
     base_ang_vel_error = base_ang_vel - ref_base_ang_vel
-    initial_base_z = state[0, 48]  # Use the first value in a traj as the reference
-    ref_base_z = initial_base_z #TODO this value is hardcoded for now to avoid needing to collect the data yet again
-    base_z = state[:, 48][:, np.newaxis]  # Rep: rep_z
-    base_z_error = base_z - ref_base_z
-    base_ori = Rotation.from_quat(state[:, 49:53], scalar_first=True).as_euler('xyz')  # Rep: rep_euler_xyz
-    # Define the representation of the rotation matrix R that transforms the base orientation.
-    rep_rot_flat = {}
-    # R = Rotation.from_euler("xyz", base_ori[2]).as_matrix()
-    for h in G.elements:
-        rep_rot_flat[h] = np.kron(rep_Rd(h), rep_Rd(~h).T)
-    rep_rot_flat = escnn_representation_form_mapping(G, rep_rot_flat)
-    rep_rot_flat.name = "SO(3)_flat"
-    base_ori_R = np.asarray([Rotation.from_euler("xyz", ori).as_matrix() for ori in base_ori])
-    base_ori_R_flat = base_ori_R.reshape(base_ori.shape[0], -1)
+
+    if num_states == 53:
+        initial_base_z = state[0, 48]  # Use the first value in a traj as the reference
+        ref_base_z = initial_base_z #TODO this value is hardcoded for now to avoid needing to collect the data yet again
+        base_z = state[:, 48][:, np.newaxis]  # Rep: rep_z
+        base_z_error = base_z - ref_base_z
+        base_ori = Rotation.from_quat(state[:, 49:53], scalar_first=True).as_euler('xyz')  # Rep: rep_euler_xyz
+        # Define the representation of the rotation matrix R that transforms the base orientation.
+        rep_rot_flat = {}
+        # R = Rotation.from_euler("xyz", base_ori[2]).as_matrix()
+        for h in G.elements:
+            rep_rot_flat[h] = np.kron(rep_Rd(h), rep_Rd(~h).T)
+        rep_rot_flat = escnn_representation_form_mapping(G, rep_rot_flat)
+        rep_rot_flat.name = "SO(3)_flat"
+        base_ori_R = np.asarray([Rotation.from_euler("xyz", ori).as_matrix() for ori in base_ori])
+        base_ori_R_flat = base_ori_R.reshape(base_ori.shape[0], -1)
 
     # Joint-Space observations _________________________________________________________________________________________
     joint_vel = state[:, 24:36]
@@ -151,16 +162,31 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     a_js_unit_circle_t = a_js_unit_circle_t.reshape(a_js_unit_circle_t.shape[0], -1)
     a_joint_pos_S1, joint_pos_rep = a_js_unit_circle_t, rep_Q_js  # Joints in angle not unit circle representation
 
+    # Joint-Space actions ============================================================
+    # Reorder the actions to match the morphosymm order
+    action = action[:, joint_order_indices]
+    # Add offset to the measurements
+    action = action + q0[7:]
+    cos_action, sin_action = np.cos(action), np.sin(action)  # convert from angle to unit circle parametrization
+    # Define actions [q1, q2, ..., qn] -> [cos(q1), sin(q1), ..., cos(qn), sin(qn)] format.
+    action_unit_circle_t = np.stack([cos_action, sin_action], axis=2)
+    action_unit_circle_t = action_unit_circle_t.reshape(action_unit_circle_t.shape[0], -1)
+    current_action_S1 = action_unit_circle_t
+
     # Subsample the data by skippig by ignoring odd frames. ============================================================
     dt_subsample = 1
-    base_z = base_z[::dt_subsample]
-    base_z_error = base_z_error[::dt_subsample]
+    velocity_commands_xy = velocity_commands_xy[::dt_subsample]
+    velocity_commands_z = velocity_commands_z[::dt_subsample]
+    if num_states == 53:
+        base_z = base_z[::dt_subsample]
+        base_z_error = base_z_error[::dt_subsample]
     base_vel = base_vel[::dt_subsample]
     projected_gravity = projected_gravity[::dt_subsample]
     projected_gravity_error = projected_gravity_error[::dt_subsample]
     base_vel_error = base_vel_error[::dt_subsample]
-    base_ori = base_ori[::dt_subsample]
-    base_ori_R_flat = base_ori_R_flat[::dt_subsample]
+    if num_states == 53:
+        base_ori = base_ori[::dt_subsample]
+        base_ori_R_flat = base_ori_R_flat[::dt_subsample]
     base_ang_vel = base_ang_vel[::dt_subsample]
     base_ang_vel_error = base_ang_vel_error[::dt_subsample]
     joint_pos = joint_pos[::dt_subsample]
@@ -168,20 +194,23 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     joint_vel = joint_vel[::dt_subsample]
     action_joint_pos = action_joint_pos[::dt_subsample]
     a_joint_pos_S1 = a_joint_pos_S1[::dt_subsample]
+    current_action_S1 = current_action_S1[::dt_subsample]
     # Define the dataset.
     data_recording = DynamicsRecording(
         description=f"Mini Cheetah {data_path.parent.parent.stem}",
         info=dict(num_traj=1, trajectory_length=state.shape[0]),
         dynamics_parameters=dict(dt=dt * dt_subsample, group=dict(group_name=G.name, group_order=G.order())),
         recordings=dict(
-            base_z=base_z[None, ...].astype(np.float32),
-            base_z_error=base_z_error[None, ...].astype(np.float32),
+            velocity_commands_xy=velocity_commands_xy[None, ...].astype(np.float32),
+            velocity_commands_z=velocity_commands_z[None, ...].astype(np.float32),
+            # base_z=base_z[None, ...].astype(np.float32),
+            # base_z_error=base_z_error[None, ...].astype(np.float32),
             base_vel=base_vel[None, ...].astype(np.float32),
             base_vel_error=base_vel_error[None, ...].astype(np.float32),
             projected_gravity=projected_gravity[None, ...].astype(np.float32),
             projected_gravity_error=projected_gravity_error[None, ...].astype(np.float32),
-            base_ori=base_ori[None, ...].astype(np.float32),
-            base_ori_R_flat=base_ori_R_flat[None, ...].astype(np.float32),
+            # base_ori=base_ori[None, ...].astype(np.float32),
+            # base_ori_R_flat=base_ori_R_flat[None, ...].astype(np.float32),
             base_ang_vel=base_ang_vel[None, ...].astype(np.float32),
             base_ang_vel_error=base_ang_vel_error[None, ...].astype(np.float32),
             joint_pos=joint_pos[None, ...].astype(np.float32),
@@ -189,14 +218,15 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
             joint_vel=joint_vel[None, ...].astype(np.float32),
             action_joint_pos=action_joint_pos[None, ...].astype(np.float32),
             a_joint_pos_S1=a_joint_pos_S1[None, ...].astype(np.float32),
+            current_action_S1=current_action_S1[None, ...].astype(np.float32),
         ),
         state_obs=(
             "joint_pos",
             "joint_vel",
-            "base_z",
-            "base_ori",
+            # "base_z",
+            # "base_ori",
         ),
-        action_obs=("action_joint_pos",),
+        action_obs=("current_action_S1",),
         obs_representations=dict(
             joint_pos=rep_TqQ_js,  # Joint-Space observations
             joint_pos_S1=rep_Q_js,  # Joint-Space position unit circle parametrization.
@@ -204,17 +234,20 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
             action_joint_pos=rep_TqQ_js,
             a_joint_pos_S1=rep_Q_js,
             # Base body observations
+            velocity_commands_xy=rep_xy,
+            velocity_commands_z=rep_euler_z,
             base_pos=rep_Rd,
-            base_z=rep_z,
-            base_z_error=rep_z,
+            # base_z=rep_z,
+            # base_z_error=rep_z,
             base_vel=rep_Rd,
             base_vel_error=rep_Rd,
             projected_gravity=rep_Rd,
             projected_gravity_error=rep_Rd,
-            base_ori=rep_euler_xyz,
-            base_ori_R_flat=rep_rot_flat,
+            # base_ori=rep_euler_xyz,
+            # base_ori_R_flat=rep_rot_flat,
             base_ang_vel=rep_euler_xyz,
             base_ang_vel_error=rep_euler_xyz,
+            current_action_S1=rep_Q_js,
         ),
         # Ensure the angles in the unit circle are not disturbed by the normalization.
         obs_moments=dict(
@@ -226,10 +259,14 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
                 np.zeros(a_js_unit_circle_t.shape[-1]),
                 np.ones(a_js_unit_circle_t.shape[-1]),
             ),
-            base_ori_R_flat=(
-                np.zeros(base_ori_R_flat.shape[-1]),
-                np.ones(base_ori_R_flat.shape[-1]),
+            current_action_S1=(
+                np.zeros(action_unit_circle_t.shape[-1]),
+                np.ones(action_unit_circle_t.shape[-1]),
             ),
+            # base_ori_R_flat=(
+                # np.zeros(base_ori_R_flat.shape[-1]),
+                # np.ones(base_ori_R_flat.shape[-1]),
+            # ),
         ),
     )
 
@@ -252,8 +289,8 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
 
 if __name__ == "__main__":
     terrains = ["curriculum"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
-    # modes = ["2025-05-16_16-16-41"]
-    modes = ["2025-05-16_16-22-18"]
+    modes = ["2025-05-16_16-16-41"]
+    # modes = ["2025-05-16_16-22-18"]
     for terrain in terrains:
         for mode in modes:
             data_paths = list(Path(f"data/mini_cheetah/isaaclab_recordings/{terrain}/{mode}/raw_recording").glob("*.npy"))
