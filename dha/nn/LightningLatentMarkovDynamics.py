@@ -85,38 +85,6 @@ class LightLatentMarkovDynamics(LightningModule):
         loss, metrics = self.model.compute_loss_and_metrics(**outputs, **batch)
         vector_metrics, scalar_metrics = self.separate_vector_scalar_metrics(metrics)
 
-        # Compute the error in observation in original units
-        state_traj = outputs["pred_state_traj"]
-        gt_state_traj = traj_from_states(batch["state"], batch["next_state"])
-
-        state_var = torch.from_numpy(self.trainer.datamodule.state_var).to(device=state_traj.device)
-        state_traj_scaled = state_traj * state_var
-        gt_state_traj_scaled = gt_state_traj * state_var
-
-        err = state_traj_scaled - gt_state_traj_scaled
-        mse = torch.mean(err**2, dim=(0, 1))
-
-        q_ang = torch.reshape(state_traj[:, :, :24], (-1, 12, 2))
-        q_ang = torch.arctan2(q_ang[:, :, 1], q_ang[:, :, 0])
-        q_ang_gt = torch.reshape(gt_state_traj[:, :, :24], (-1, 12, 2))
-        q_ang_gt = torch.arctan2(q_ang_gt[:, :, 1], q_ang_gt[:, :, 0])
-
-        q_err = torch.mean((q_ang - q_ang_gt) ** 2, dim=0)
-        dq_err = mse[24:36]
-        z_err = mse[36]
-        base_vel_err = mse[37:40]
-        base_ori_err = mse[40:43]
-        base_ang_vel_err = mse[43:46]
-
-        scalar_metrics.update(
-            state_q_err=torch.mean(q_err),
-            state_dq_err=torch.mean(dq_err),
-            state_z_err=torch.mean(z_err),
-            state_base_vel_err=torch.mean(base_vel_err),
-            state_base_ori_err=torch.mean(base_ori_err),
-            state_base_ang_vel_err=torch.mean(base_ang_vel_err),
-        )
-
         self.log("loss/test", loss, prog_bar=False)
         self.log_metrics(scalar_metrics, suffix="test", batch_size=self._batch_size)
         self.log_vector_metrics(vector_metrics, type_sufix="test", batch_size=self._batch_size)
