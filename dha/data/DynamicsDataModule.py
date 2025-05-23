@@ -113,7 +113,8 @@ class DynamicsDataModule(LightningDataModule):
         self.action_obs = recording_metadata.action_obs if self.action_obs is None else self.action_obs
         # Compute normalization mean and variance parameters for the state and action spaces.
         self.state_mean, self.state_var = recording_metadata.state_moments()
-        # self.action_mean, self.action_var = recording_metadata.action_moments()
+        if len(self.action_obs) > 0:
+            self.action_mean, self.action_var = recording_metadata.action_moments()
 
         # Ensure samples contain torch.Tensors and not numpy arrays.
         # Apply map to obtain flat state/next_state action/next_action values
@@ -127,30 +128,60 @@ class DynamicsDataModule(LightningDataModule):
         # After mapping to state next state, remove all other observations
         obs_to_remove = set(train_dataset.features.keys())
         obs_to_remove.discard("state")
-        map_fn_kwargs = dict(
-            state_observations=self.state_obs,
-            state_mean=self.state_mean if self.standardize else None,
-            state_std=np.sqrt(self.state_var) if self.standardize else None,
-        )
 
-        self.train_dataset = train_dataset.with_format("torch").map(
-            DynamicsRecording.map_state_next_state,
-            batched=True,
-            fn_kwargs=map_fn_kwargs,
-            remove_columns=tuple(obs_to_remove),
-        )
-        self.test_dataset = test_dataset.with_format("torch").map(
-            DynamicsRecording.map_state_next_state,
-            batched=True,
-            fn_kwargs=map_fn_kwargs,
-            remove_columns=tuple(obs_to_remove),
-        )
-        self.val_dataset = val_dataset.with_format("torch").map(
-            DynamicsRecording.map_state_next_state,
-            batched=True,
-            fn_kwargs=map_fn_kwargs,
-            remove_columns=tuple(obs_to_remove),
-        )
+        if len(self.action_obs) > 0:
+            map_fn_kwargs = dict(
+                state_observations=self.state_obs,
+                state_mean=self.state_mean if self.standardize else None,
+                state_std=np.sqrt(self.state_var) if self.standardize else None,
+                action_observations=self.action_obs,
+                action_mean=self.action_mean if self.standardize else None,
+                action_std=np.sqrt(self.action_var) if self.standardize else None,
+            )
+
+            self.train_dataset = train_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_action_state,
+                batched=True,
+                fn_kwargs=map_fn_kwargs,
+                remove_columns=tuple(obs_to_remove),
+            )
+            self.test_dataset = test_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_action_state,
+                batched=True,
+                fn_kwargs=map_fn_kwargs,
+                remove_columns=tuple(obs_to_remove),
+            )
+            self.val_dataset = val_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_action_state,
+                batched=True,
+                fn_kwargs=map_fn_kwargs,
+                remove_columns=tuple(obs_to_remove),
+            )
+        else: # no action observations, therefore not a controlled system
+            map_fn_kwargs = dict(
+                state_observations=self.state_obs,
+                state_mean=self.state_mean if self.standardize else None,
+                state_std=np.sqrt(self.state_var) if self.standardize else None,
+            )
+
+            self.train_dataset = train_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_next_state,
+                batched=True,
+                fn_kwargs=map_fn_kwargs,
+                remove_columns=tuple(obs_to_remove),
+            )
+            self.test_dataset = test_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_next_state,
+                batched=True,
+                fn_kwargs=map_fn_kwargs,
+                remove_columns=tuple(obs_to_remove),
+            )
+            self.val_dataset = val_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_next_state,
+                batched=True,
+                fn_kwargs=map_fn_kwargs,
+                remove_columns=tuple(obs_to_remove),
+            )
 
         # Configure the prediction dataloader for the approximating and evaluating the transfer operator. This will
         # be a dataloader passing state and next state single step measurements:
@@ -167,12 +198,22 @@ class DynamicsDataModule(LightningDataModule):
 
         transfer_op_train_dataset, _, _ = datasets
 
-        self._transfer_op_train_dataset = transfer_op_train_dataset.with_format("torch").map(
-            DynamicsRecording.map_state_next_state,
+        if len(self.action_obs) > 0:
+            self._transfer_op_train_dataset = transfer_op_train_dataset.with_format("torch").map(
+            DynamicsRecording.map_state_action_state,
             batched=True,
-            fn_kwargs={"state_observations": self.state_obs},
+            fn_kwargs={"state_observations": self.state_obs,
+                       "action_observations": self.action_obs,},
             remove_columns=tuple(obs_to_remove),
-        )
+            )
+
+        else:  # no action observations, therefore not a controlled system
+            self._transfer_op_train_dataset = transfer_op_train_dataset.with_format("torch").map(
+                DynamicsRecording.map_state_next_state,
+                batched=True,
+                fn_kwargs={"state_observations": self.state_obs},
+                remove_columns=tuple(obs_to_remove),
+            )
 
         # Rebuilt the ESCNN representations of measurements _________________________________________________________
         # TODO: Handle dyn systems without symmetries
@@ -211,7 +252,10 @@ class DynamicsDataModule(LightningDataModule):
 
         log.info(f"Data preparation done in {time.time() - start_time:.2f} [s]")
 
-        return {"state_mean": self.state_mean, "state_var": self.state_var}
+        if len(self.action_obs) > 0:
+            return {"state_mean": self.state_mean, "state_var": self.state_var, "action_mean": self.action_mean, "action_var": self.action_var}
+        else:
+            return {"state_mean": self.state_mean, "state_var": self.state_var}
 
     def setup(self, stage: str) -> None:
         log.info(f"Setting up {stage} dataset")

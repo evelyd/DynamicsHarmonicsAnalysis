@@ -1,0 +1,196 @@
+import logging
+import math
+from typing import Optional, Union
+
+import torch
+from morpho_symm.nn.MLP import MLP
+from torch import Tensor
+
+from dha.nn.DynamicsAutoEncoder import DAE
+from dha.nn.ControlledLinearDynamics import ControlledLinearDynamics
+from dha.nn.markov_dynamics import MarkovDynamics
+from dha.utils.losses_and_metrics import obs_state_space_metrics
+
+log = logging.getLogger(__name__)
+
+
+class ControlledDAE(DAE):
+    _default_obs_fn_params = dict(
+        num_layers=4,
+        num_hidden_units=128,
+        activation=torch.nn.ELU,
+        batch_norm=True,
+        bias=False,
+        init_mode="fan_in",
+    )
+
+    def __init__(
+        self,
+        action_dim: int,
+        **dae_params,
+    ):
+        self.action_dim = action_dim
+
+        # Pass the obs_state_dynamics to the parent class initializer
+        super(ControlledDAE, self).__init__(**dae_params)
+
+    def forward(self, state: Tensor, action: Tensor, next_state: Optional[Tensor]) -> [dict[str, Tensor]]:
+        """Forward pass of the dynamics model, producing a prediction of the next `n_steps` states.
+
+        Args:
+            state: (batch, state_dim) Initial state of the system.
+            action: (batch, action_dim) Action applied to the system.
+            next_state: (batch, pred_horizon, state_dim) Next states of the system in a prediction horizon window.
+
+        Returns:
+            predictions (dict): A dictionary containing the predicted state and observable state trajectory.
+                - 'obs_state_traj': (batch, pred_horizon + 1, obs_state_dim)
+                - 'pred_obs_state_traj': (batch, pred_horizon + 1, obs_state_dim)
+                - 'pred_state_traj': (batch, pred_horizon + 1, state_dim)
+
+        """
+        assert state.shape[-1] == next_state.shape[-1], f"Invalid state dimension {state.shape[-1]} != {self.state_dim}"
+        assert state.shape[0] == next_state.shape[0], f"Invalid batch size {state.shape[0]} != {next_state.shape[0]}"
+        assert len(state.shape) == 2, f"Invalid state shape {state.shape}. Expected (batch, {self.state_dim})"
+
+        assert action.shape[0] == action.shape[0], f"Invalid action batch size {action.shape[0]} != {action.shape[0]}"
+        assert action.shape[-1] == self.action_dim, f"Invalid action dimension {action.shape[-1]} != {self.action_dim}"
+        assert len(action.shape) == 3, f"Invalid action shape {action.shape}. Expected (batch, {pred_horizon+1}, {self.action_dim})"
+        if len(next_state.shape) == 2:
+            next_state = next_state.unsqueeze(1)
+
+        batch, pred_horizon, _ = next_state.shape
+        time_horizon = pred_horizon + 1
+
+        # Apply pre-processing to the initial state and state trajectory
+        # obtaining a stare trajectory of shape: (batch * (pred_horizon + 1), state_dim) tensor
+        state_traj = self.pre_process_state(state=state, next_state=next_state)
+
+        # Preprocess the action trajectory
+        action_traj = self.pre_process_state(state=action)
+
+        # Observation function evaluation ===============================================
+        # Compute the projection of the state trajectory in the main and auxiliary observable states
+        obs_fn_output = self.obs_fn(state_traj)
+        # Post-process observation state trajectories to get (batch, (pred_horizon + 1), obs_state_dim) tensors
+        if not isinstance(obs_fn_output, tuple):
+            pre_obs_fn_output = self.pre_process_obs_state(obs_fn_output)
+        else:
+            pre_obs_fn_output = self.pre_process_obs_state(*obs_fn_output)
+
+        # Extract the observable state trajectory
+        assert "obs_state_traj" in pre_obs_fn_output, f"Missing 'obs_state_traj' in {pre_obs_fn_output}"
+        obs_state_traj = pre_obs_fn_output.pop("obs_state_traj")
+
+        # Evolution of observable states ===============================================
+        # Evolve the observable state with the current observable dynamics model.
+        obs_dyn_output = self.obs_space_dynamics(
+            state=obs_state_traj[:, 0, :], action=action_traj, next_state=obs_state_traj[:, 1:, :], **pre_obs_fn_output
+        )
+        obs_dyn_output = {k.replace("state", "obs_state"): v for k, v in obs_dyn_output.items()}
+        pred_obs_state_traj = obs_dyn_output.pop("pred_obs_state_traj")
+
+        # Observation function inversion ===============================================
+        # This post-processing of observables ensures the input to the inverse function is of the correct shape.
+        # Predicted trajectory of observable state in observable space
+        post_pred_obs_dyn_output = self.post_process_obs_state(pred_obs_state_traj)
+        # Predicted trajectory of the system's state in the original state space
+        pred_state_traj = self.inv_obs_fn(post_pred_obs_dyn_output.pop("obs_state_traj"))
+        # Ground-truth trajectory of observable state in observable space
+        post_obs_dyn_output = self.post_process_obs_state(obs_state_traj)
+        # Reconstruction of the system's state in the original state space
+        rec_state_traj = self.inv_obs_fn(post_obs_dyn_output.pop("obs_state_traj"))
+
+        # Apply the required post-processing of the state.
+        pred_state_traj = self.post_process_state(pred_state_traj)
+        rec_state_traj = self.post_process_state(rec_state_traj)
+
+        # Sanity checks of shapes.
+        self.check_state_traj_shape(
+            pred_state_traj=pred_state_traj,
+            rec_state_traj=rec_state_traj,
+            time_horizon=time_horizon,
+            state_dim=self.state_dim,
+        )
+        self.check_state_traj_shape(
+            obs_state_traj=obs_state_traj,
+            pred_obs_state_traj=pred_obs_state_traj,
+            time_horizon=time_horizon,
+            state_dim=self.obs_state_dim,
+        )
+        return dict(
+            obs_state_traj=obs_state_traj,
+            pred_obs_state_traj=pred_obs_state_traj,
+            pred_state_traj=pred_state_traj,
+            rec_state_traj=rec_state_traj,
+            **pre_obs_fn_output,
+            **obs_dyn_output,
+        )
+
+    def forecast(self, state: Tensor, action: Tensor, n_steps: int = 1, **kwargs) -> [dict[str, Tensor]]:
+        """Forward pass of the dynamics model, producing a prediction of the next `n_steps` states.
+
+        This function uses the empirical transfer operator to compute forcast the observable state.
+
+        Args:
+            state: (batch_dim, obs_state_dim) Initial observable state of the system.
+            action: (batch_dim, action_dim) Action applied to the system.
+            n_steps: Number of steps to predict.
+            **kwargs:
+        Returns:
+            pred_next_obs_state: (batch_dim, n_steps, obs_state_dim) Predicted observable state.
+
+        """
+        assert state.shape[-1] == self.state_dim, f"Invalid state: {state.shape}. Expected (batch, {self.state_dim})"
+        assert action.shape[-1] == self.action_dim, f"Invalid action: {action.shape}. Expected (batch, {self.action_dim})"
+        time_horizon = n_steps + 1
+
+        obs_state = self.obs_fn(state)
+
+        pred_obs_state_traj = self.obs_space_dynamics.forcast(state=obs_state, action=action, n_steps=n_steps)
+
+        pred_state_traj = self.inv_obs_fn(pred_obs_state_traj)
+
+        assert pred_state_traj.shape == (self._batch_size, time_horizon, self.state_dim), (
+            f"{pred_state_traj.shape}!=({self._batch_size}, {time_horizon}, {self.state_dim})"
+        )
+        assert pred_obs_state_traj.shape == (self._batch_size, time_horizon, self.obs_state_dim), (
+            f"{pred_obs_state_traj.shape}!=({self._batch_size}, {time_horizon}, {self.obs_state_dim})"
+        )
+        return pred_state_traj, pred_obs_state_traj
+
+    def compute_loss_and_metrics(
+        self,
+        state: Tensor,
+        action: Tensor,
+        next_state: Tensor,
+        pred_state_traj: Tensor,
+        rec_state_traj: Tensor,
+        obs_state_traj: Tensor,
+        pred_obs_state_traj: Tensor,
+        pred_obs_state_one_step: Tensor,
+    ) -> (Tensor, dict[str, Tensor]):
+        _, forecast_metrics = super(DAE, self).compute_loss_and_metrics(
+            state=state,
+            next_state=next_state,
+            pred_state_traj=pred_state_traj,
+            rec_state_traj=rec_state_traj,
+            obs_state_traj=obs_state_traj,
+            pred_obs_state_traj=pred_obs_state_traj,
+        )
+
+        # obs_space_metrics = self.get_obs_space_metrics(obs_state_traj, pred_obs_state_one_step)
+
+        loss = self.compute_loss(
+            state_rec_loss=forecast_metrics["state_rec_loss"],
+            state_pred_loss=forecast_metrics["state_pred_loss"],
+            obs_pred_loss=forecast_metrics["obs_pred_loss"],
+            # orth_reg=obs_space_metrics["orth_reg"]
+        )
+
+        # metrics = dict(**forecast_metrics, **obs_space_metrics)
+        metrics = dict(**forecast_metrics)
+        return loss, metrics
+
+    def build_obs_dyn_module(self) -> ControlledLinearDynamics:
+        return ControlledLinearDynamics(state_dim=self.obs_state_dim, action_dim=self.action_dim, dt=self.dt, trainable=True, bias=self.enforce_constant_fn)

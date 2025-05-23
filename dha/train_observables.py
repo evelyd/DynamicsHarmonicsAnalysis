@@ -72,8 +72,7 @@ def main(cfg: DictConfig):
         # Save the state mean and variance to a file
         mean_var_file = seed_path / "state_mean_var.npy"
         np.save(mean_var_file, state_mean_var_dict)
-        log.info(f"Saved state_mean and state_var to {mean_var_file}")
-        input("saved state_mean and state_var")
+        log.info(f"Saved state and action mean and var to {mean_var_file}")
 
         if cfg.system.state_dim != "??":
             assert datamodule.state_type.size == cfg.system.state_dim, (
@@ -172,6 +171,10 @@ def main(cfg: DictConfig):
 
 def get_model(cfg, datamodule):
     state_dim = datamodule.state_type.size
+    if datamodule.action_field_type is not None:
+        action_dim = datamodule.action_field_type.size
+    else:
+        action_dim = 0
     obs_state_dim = math.ceil(cfg.system.obs_state_ratio * state_dim)
     num_hidden_neurons = cfg.model.num_hidden_units
 
@@ -199,6 +202,22 @@ def get_model(cfg, datamodule):
 
         model = DAE(
             state_dim=state_dim,
+            obs_state_dim=obs_state_dim,
+            dt=datamodule.dt,
+            obs_pred_w=cfg.model.obs_pred_w,
+            orth_w=cfg.model.orth_w,
+            corr_w=cfg.model.corr_w,
+            obs_fn_params=obs_fn_params,
+            enforce_constant_fn=cfg.model.constant_function,
+            # reuse_input_observable=cfg.model.reuse_input_observable,
+        )
+    elif cfg.model.name.lower() in ["c-dae"]:
+        assert cfg.system.pred_horizon >= 1
+        from dha.nn.ControlledDynamicsAutoEncoder import ControlledDAE
+
+        model = ControlledDAE(
+            state_dim=state_dim,
+            action_dim=action_dim,
             obs_state_dim=obs_state_dim,
             dt=datamodule.dt,
             obs_pred_w=cfg.model.obs_pred_w,
