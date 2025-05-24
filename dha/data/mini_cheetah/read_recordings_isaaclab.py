@@ -34,6 +34,15 @@ def get_Rd_signals_on_kin_subchains(G: Group, rep_kin_three: Representation):
     rep_F.name = "R3_on_legs"
     return rep_F
 
+def compute_joint_pos_obs(q_js_ms_rel: np.ndarray, q0_isaaclab: np.ndarray, q0: np.ndarray, joint_order_indices: list):
+    q_js_ms = q_js_ms_rel[:, joint_order_indices] + q0_isaaclab[joint_order_indices] + q0[7:]  # Add offset to the measurements from UMich
+    cos_q_js, sin_q_js = np.cos(q_js_ms), np.sin(q_js_ms)  # convert from angle to unit circle parametrization
+    # Define joint positions [q1, q2, ..., qn] -> [cos(q1), sin(q1), ..., cos(qn), sin(qn)] format.
+    q_js_unit_circle_t = np.stack([cos_q_js, sin_q_js], axis=2)
+    q_js_unit_circle_t = q_js_unit_circle_t.reshape(q_js_unit_circle_t.shape[0], -1)
+    joint_pos_S1 = q_js_unit_circle_t  # Joints in angle not unit circle representation
+    joint_pos = q_js_ms  # Joints in angle representation
+    return joint_pos_S1, joint_pos
 
 def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     """Convertion script for the recordings of observations from the Mini-Cheetah Robot.
@@ -141,37 +150,12 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
     # Get zero reference position.
     q0, _ = robot.pin2sim(robot._q0, np.zeros(robot.nv))
     q_js_ms_rel = state[:, 12:24] # the raw joitn position that comes from isaaclab is the relative one (relative to isaaclab default joint pos) where qrrel = qabs - q0isaaclab
-    q_js_ms = q_js_ms_rel + q0_isaaclab  # Compute the absolute joint position
-    # q_js_ms = q_js_ms_rel + q0[7:]  # Add offset to the measurements from UMich
-    # Reorder joint positions to match the morphosymm order
-    q_js_ms = q_js_ms[:, joint_order_indices]
-    q_js_ms = q_js_ms + q0[7:]  # Add offset to the measurements from UMich
-    cos_q_js, sin_q_js = np.cos(q_js_ms), np.sin(q_js_ms)  # convert from angle to unit circle parametrization
-    # Define joint positions [q1, q2, ..., qn] -> [cos(q1), sin(q1), ..., cos(qn), sin(qn)] format.
-    q_js_unit_circle_t = np.stack([cos_q_js, sin_q_js], axis=2)
-    q_js_unit_circle_t = q_js_unit_circle_t.reshape(q_js_unit_circle_t.shape[0], -1)
-    joint_pos_S1, joint_pos_rep = q_js_unit_circle_t, rep_Q_js  # Joints in angle not unit circle representation
-    joint_pos = q_js_ms  # Joints in angle representation
+    joint_pos_S1, joint_pos = compute_joint_pos_obs(q_js_ms_rel, q0_isaaclab, q0, joint_order_indices)
     action_joint_pos = state[:, 36:48]  # Rep: rep_TqQ_js
-    # Reorder action joint positions to match the morphosymm order
-    action_joint_pos = action_joint_pos[:, joint_order_indices] # the action joint positions are already absolute
-    action_joint_pos = action_joint_pos + q0[7:]  # Add offset to the measurements
-    cos_a_js, sin_a_js = np.cos(action_joint_pos), np.sin(action_joint_pos)  # convert from angle to unit circle parametrization
-    # Define joint positions [q1, q2, ..., qn] -> [cos(q1), sin(q1), ..., cos(qn), sin(qn)] format.
-    a_js_unit_circle_t = np.stack([cos_a_js, sin_a_js], axis=2)
-    a_js_unit_circle_t = a_js_unit_circle_t.reshape(a_js_unit_circle_t.shape[0], -1)
-    a_joint_pos_S1, joint_pos_rep = a_js_unit_circle_t, rep_Q_js  # Joints in angle not unit circle representation
+    a_joint_pos_S1, a_joint_pos = compute_joint_pos_obs(action_joint_pos, q0_isaaclab, q0, joint_order_indices)
 
     # Joint-Space actions ============================================================
-    # Reorder the actions to match the morphosymm order
-    action = action[:, joint_order_indices]
-    # Add offset to the measurements
-    action = action + q0[7:]
-    cos_action, sin_action = np.cos(action), np.sin(action)  # convert from angle to unit circle parametrization
-    # Define actions [q1, q2, ..., qn] -> [cos(q1), sin(q1), ..., cos(qn), sin(qn)] format.
-    action_unit_circle_t = np.stack([cos_action, sin_action], axis=2)
-    action_unit_circle_t = action_unit_circle_t.reshape(action_unit_circle_t.shape[0], -1)
-    current_action_S1 = action_unit_circle_t
+    current_action_S1, current_action = compute_joint_pos_obs(action, q0_isaaclab, q0, joint_order_indices)
 
     # Subsample the data by skippig by ignoring odd frames. ============================================================
     dt_subsample = 1
@@ -252,16 +236,16 @@ def convert_mini_cheetah_isaaclab_recordings(data_paths: list):
         # Ensure the angles in the unit circle are not disturbed by the normalization.
         obs_moments=dict(
             joint_pos_S1=(
-                np.zeros(q_js_unit_circle_t.shape[-1]),
-                np.ones(q_js_unit_circle_t.shape[-1]),
+                np.zeros(joint_pos_S1.shape[-1]),
+                np.ones(joint_pos_S1.shape[-1]),
             ),
             a_joint_pos_S1=(
-                np.zeros(a_js_unit_circle_t.shape[-1]),
-                np.ones(a_js_unit_circle_t.shape[-1]),
+                np.zeros(a_joint_pos_S1.shape[-1]),
+                np.ones(a_joint_pos_S1.shape[-1]),
             ),
             current_action_S1=(
-                np.zeros(action_unit_circle_t.shape[-1]),
-                np.ones(action_unit_circle_t.shape[-1]),
+                np.zeros(current_action_S1.shape[-1]),
+                np.ones(current_action_S1.shape[-1]),
             ),
             # base_ori_R_flat=(
                 # np.zeros(base_ori_R_flat.shape[-1]),
