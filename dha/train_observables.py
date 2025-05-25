@@ -53,6 +53,7 @@ def main(cfg: DictConfig):
         # Get the Lightning data module handling training/test/val data loaders
         datamodule = DynamicsDataModule(
             data_path,
+            model_name=cfg.model.name.lower(),
             batch_size=cfg.model.batch_size,
             frames_per_step=cfg.system.frames_per_state,
             pred_horizon=cfg.system.pred_horizon,
@@ -211,7 +212,7 @@ def get_model(cfg, datamodule):
             enforce_constant_fn=cfg.model.constant_function,
             # reuse_input_observable=cfg.model.reuse_input_observable,
         )
-    elif cfg.model.name.lower() in ["c-dae"]:
+    elif cfg.model.name.lower() == "c-dae":
         assert cfg.system.pred_horizon >= 1
         from dha.nn.ControlledDynamicsAutoEncoder import ControlledDAE
 

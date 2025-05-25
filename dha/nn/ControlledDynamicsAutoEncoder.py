@@ -5,11 +5,13 @@ from typing import Optional, Union
 import torch
 from morpho_symm.nn.MLP import MLP
 from torch import Tensor
+from plotly.graph_objs import Figure
 
 from dha.nn.DynamicsAutoEncoder import DAE
 from dha.nn.ControlledLinearDynamics import ControlledLinearDynamics
 from dha.nn.markov_dynamics import MarkovDynamics
 from dha.utils.losses_and_metrics import obs_state_space_metrics
+from dha.utils.mysc import traj_from_states
 
 log = logging.getLogger(__name__)
 
@@ -55,12 +57,13 @@ class ControlledDAE(DAE):
 
         assert action.shape[0] == action.shape[0], f"Invalid action batch size {action.shape[0]} != {action.shape[0]}"
         assert action.shape[-1] == self.action_dim, f"Invalid action dimension {action.shape[-1]} != {self.action_dim}"
-        assert len(action.shape) == 3, f"Invalid action shape {action.shape}. Expected (batch, {pred_horizon+1}, {self.action_dim})"
         if len(next_state.shape) == 2:
             next_state = next_state.unsqueeze(1)
 
         batch, pred_horizon, _ = next_state.shape
         time_horizon = pred_horizon + 1
+
+        assert len(action.shape) == 3, f"Invalid action shape {action.shape}. Expected (batch, {pred_horizon}, {self.action_dim})"
 
         # Apply pre-processing to the initial state and state trajectory
         # obtaining a stare trajectory of shape: (batch * (pred_horizon + 1), state_dim) tensor
@@ -191,6 +194,85 @@ class ControlledDAE(DAE):
         # metrics = dict(**forecast_metrics, **obs_space_metrics)
         metrics = dict(**forecast_metrics)
         return loss, metrics
+
+    @torch.no_grad()
+    def eval_metrics(
+        self,
+        state: Tensor,
+        action: Tensor,
+        next_state: Tensor,
+        obs_state_traj: Tensor,
+        obs_state_traj_aux: Optional[Tensor] = None,
+        pred_state_traj: Optional[Tensor] = None,
+        rec_state_traj: Optional[Tensor] = None,
+        pred_obs_state_one_step: Optional[Tensor] = None,
+        pred_obs_state_traj: Optional[Tensor] = None,
+    ) -> (dict[str, Figure], dict[str, Tensor]):
+        state_traj = traj_from_states(state, next_state)
+
+        if obs_state_traj_aux is None and pred_obs_state_one_step is not None:
+            obs_state_traj_aux = pred_obs_state_one_step
+
+        # Detach all arguments and ensure they are in CPU
+        state_traj = state_traj.detach().cpu().numpy()
+        obs_state_traj = obs_state_traj.detach().cpu().numpy()
+        if obs_state_traj_aux is not None:
+            obs_state_traj_aux = obs_state_traj_aux.detach().cpu().numpy()
+        if pred_state_traj is not None:
+            pred_state_traj = pred_state_traj.detach().cpu().numpy()
+        if pred_obs_state_traj is not None:
+            pred_obs_state_traj = pred_obs_state_traj.detach().cpu().numpy()
+
+        from dha.utils.plotting import plot_two_panel_trajectories
+        fig = plot_two_panel_trajectories(
+            state_trajs=state_traj,
+            pred_state_trajs=pred_state_traj,
+            obs_state_trajs=obs_state_traj,
+            pred_obs_state_trajs=pred_obs_state_traj,
+            dt=self.dt,
+            n_trajs_to_show=5,
+        )
+        figs = dict(prediction=fig)
+        if self.obs_state_dim == 3:
+            from dha.utils.plotting import plot_system_3D
+            fig_3do = plot_system_3D(
+                trajectories=obs_state_traj,
+                secondary_trajectories=pred_obs_state_traj,
+                title="obs_state",
+                num_trajs_to_show=20,
+            )
+            if obs_state_traj_aux is not None:
+                fig_3do = plot_system_3D(
+                    trajectories=obs_state_traj_aux,
+                    legendgroup="aux",
+                    traj_colorscale="solar",
+                    num_trajs_to_show=20,
+                    fig=fig_3do,
+                )
+            figs["obs_state"] = fig_3do
+        if self.state_dim == 3:
+            fig_3ds = plot_system_3D(
+                trajectories=state_traj,
+                secondary_trajectories=pred_state_traj,
+                title="state_traj",
+                num_trajs_to_show=20,
+            )
+            figs["state"] = fig_3ds
+
+        if self.obs_state_dim == 2:
+            from dha.utils.plotting import plot_system_2D
+            fig_2do = plot_system_2D(
+                trajs=obs_state_traj, secondary_trajs=pred_obs_state_traj, alpha=0.2, num_trajs_to_show=10
+            )
+            if obs_state_traj_aux is not None:
+                fig_2do = plot_system_2D(trajs=obs_state_traj_aux, legendgroup="aux", num_trajs_to_show=10, fig=fig_2do)
+            figs["obs_state"] = fig_2do
+        if self.state_dim == 2:
+            fig_2ds = plot_system_2D(trajs=state_traj, secondary_trajs=pred_state_traj, alpha=0.2, num_trajs_to_show=10)
+            figs["state"] = fig_2ds
+
+        metrics = None
+        return figs, metrics
 
     def build_obs_dyn_module(self) -> ControlledLinearDynamics:
         return ControlledLinearDynamics(state_dim=self.obs_state_dim, action_dim=self.action_dim, dt=self.dt, trainable=True, bias=self.enforce_constant_fn)

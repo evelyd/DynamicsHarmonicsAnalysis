@@ -2,6 +2,7 @@ import logging
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
+from dataclasses import asdict
 
 import escnn.group
 import numpy as np
@@ -9,6 +10,7 @@ import torch
 from escnn.nn import FieldType
 from lightning import LightningDataModule
 from morpho_symm.data.DynamicsRecording import DynamicsRecording, get_dynamics_dataset, get_train_test_val_file_paths
+from dha.data.DhaDynamicsRecording import DhaDynamicsRecording
 from torch.utils.data import DataLoader
 
 from dha.utils.mysc import traj_from_states
@@ -20,6 +22,7 @@ class DynamicsDataModule(LightningDataModule):
     def __init__(
         self,
         data_path: Path,
+        model_name: str,
         pred_horizon: Union[int, float] = 0.25,
         eval_pred_horizon: Union[int, float] = 0.5,
         test_pred_horizon: Union[int, float] = 0.5,
@@ -37,6 +40,7 @@ class DynamicsDataModule(LightningDataModule):
         super().__init__()
         if system_cfg is None:
             system_cfg = {}
+        self.model_name = model_name
         self._data_path = data_path
         self.system_cfg = system_cfg if system_cfg is not None else {}
         self.noise_level = self.system_cfg.get("noise_level", None)
@@ -105,7 +109,12 @@ class DynamicsDataModule(LightningDataModule):
             state_obs=self.state_obs,
             action_obs=self.action_obs,
         )
-        self.metadata: DynamicsRecording = recording_metadata
+        if len(self.action_obs) > 0 and self.model_name == "c-dae":
+            dr_data_dict = asdict(recording_metadata)
+            recording_metadata = DhaDynamicsRecording(**dr_data_dict)
+            self.metadata: DhaDynamicsRecording = recording_metadata
+        else:
+            self.metadata: DynamicsRecording = recording_metadata
         # observations_names = self.metadata.
         self.dt = recording_metadata.dynamics_parameters["dt"]
         # In case no measurements are passed, we recover the ones from the DynamicsRecording
@@ -113,7 +122,7 @@ class DynamicsDataModule(LightningDataModule):
         self.action_obs = recording_metadata.action_obs if self.action_obs is None else self.action_obs
         # Compute normalization mean and variance parameters for the state and action spaces.
         self.state_mean, self.state_var = recording_metadata.state_moments()
-        if len(self.action_obs) > 0:
+        if len(self.action_obs) > 0 and self.model_name == "c-dae":
             self.action_mean, self.action_var = recording_metadata.action_moments()
 
         # Ensure samples contain torch.Tensors and not numpy arrays.
@@ -129,7 +138,7 @@ class DynamicsDataModule(LightningDataModule):
         obs_to_remove = set(train_dataset.features.keys())
         obs_to_remove.discard("state")
 
-        if len(self.action_obs) > 0:
+        if len(self.action_obs) > 0 and self.model_name == "c-dae":
             map_fn_kwargs = dict(
                 state_observations=self.state_obs,
                 state_mean=self.state_mean if self.standardize else None,
@@ -140,19 +149,19 @@ class DynamicsDataModule(LightningDataModule):
             )
 
             self.train_dataset = train_dataset.with_format("torch").map(
-                DynamicsRecording.map_state_action_state,
+                DhaDynamicsRecording.map_state_action_state,
                 batched=True,
                 fn_kwargs=map_fn_kwargs,
                 remove_columns=tuple(obs_to_remove),
             )
             self.test_dataset = test_dataset.with_format("torch").map(
-                DynamicsRecording.map_state_action_state,
+                DhaDynamicsRecording.map_state_action_state,
                 batched=True,
                 fn_kwargs=map_fn_kwargs,
                 remove_columns=tuple(obs_to_remove),
             )
             self.val_dataset = val_dataset.with_format("torch").map(
-                DynamicsRecording.map_state_action_state,
+                DhaDynamicsRecording.map_state_action_state,
                 batched=True,
                 fn_kwargs=map_fn_kwargs,
                 remove_columns=tuple(obs_to_remove),
@@ -198,9 +207,9 @@ class DynamicsDataModule(LightningDataModule):
 
         transfer_op_train_dataset, _, _ = datasets
 
-        if len(self.action_obs) > 0:
+        if len(self.action_obs) > 0 and self.model_name == "c-dae":
             self._transfer_op_train_dataset = transfer_op_train_dataset.with_format("torch").map(
-            DynamicsRecording.map_state_action_state,
+            DhaDynamicsRecording.map_state_action_state,
             batched=True,
             fn_kwargs={"state_observations": self.state_obs,
                        "action_observations": self.action_obs,},
@@ -252,7 +261,7 @@ class DynamicsDataModule(LightningDataModule):
 
         log.info(f"Data preparation done in {time.time() - start_time:.2f} [s]")
 
-        if len(self.action_obs) > 0:
+        if len(self.action_obs) > 0 and self.model_name == "c-dae":
             return {"state_mean": self.state_mean, "state_var": self.state_var, "action_mean": self.action_mean, "action_var": self.action_var}
         else:
             return {"state_mean": self.state_mean, "state_var": self.state_var}
