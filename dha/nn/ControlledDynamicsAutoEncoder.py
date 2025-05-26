@@ -29,9 +29,11 @@ class ControlledDAE(DAE):
     def __init__(
         self,
         action_dim: int,
+        transfer_op_eigval_reg_w: float = 100.0,
         **dae_params,
     ):
         self.action_dim = action_dim
+        self.transfer_op_eigval_reg_w = transfer_op_eigval_reg_w
 
         # Pass the obs_state_dynamics to the parent class initializer
         super(ControlledDAE, self).__init__(**dae_params)
@@ -184,16 +186,44 @@ class ControlledDAE(DAE):
 
         # obs_space_metrics = self.get_obs_space_metrics(obs_state_traj, pred_obs_state_one_step)
 
+        # Penalize transfer operator eigenvalues if they are greater than 1
+        transfer_op = self.obs_space_dynamics.transfer_op.weight
+        eigenvalues = torch.linalg.eigvals(transfer_op)
+        transfer_op_eigval_reg_loss = torch.sum(torch.relu(torch.abs(eigenvalues) - 1.0).pow(2))
+
+        forecast_metrics["transfer_op_eigval_reg_loss"] = transfer_op_eigval_reg_loss
+
+        # Add the eigenvalue penalty to the loss
         loss = self.compute_loss(
             state_rec_loss=forecast_metrics["state_rec_loss"],
             state_pred_loss=forecast_metrics["state_pred_loss"],
             obs_pred_loss=forecast_metrics["obs_pred_loss"],
-            # orth_reg=obs_space_metrics["orth_reg"]
+            transfer_op_eigval_reg_loss=forecast_metrics["transfer_op_eigval_reg_loss"],
         )
 
         # metrics = dict(**forecast_metrics, **obs_space_metrics)
         metrics = dict(**forecast_metrics)
         return loss, metrics
+
+    def compute_loss(
+        self, state_rec_loss: Tensor, state_pred_loss: Tensor, obs_pred_loss: Tensor, transfer_op_eigval_reg_loss: Tensor, orth_reg: Optional[Tensor] = None
+    ):
+
+        # Compute the autoencoder loss, which is a combination of state reconstruction, state prediction, and observation prediction losses
+        ae_loss = super(ControlledDAE, self).compute_loss(
+            state_rec_loss=state_rec_loss,
+            state_pred_loss=state_pred_loss,
+            obs_pred_loss=obs_pred_loss,
+            # transfer_op_eigval_reg_loss=transfer_op_eigval_reg_loss,
+            orth_reg=orth_reg,
+        )
+
+        # Compute the regularization term for the transfer operator eigenvalues
+        transfer_op_eigval_reg_loss = self.transfer_op_eigval_reg_w * transfer_op_eigval_reg_loss
+
+        loss = ae_loss + transfer_op_eigval_reg_loss
+
+        return loss
 
     @torch.no_grad()
     def eval_metrics(
