@@ -156,6 +156,9 @@ class ControlledDAE(DAE):
 
         pred_state_traj = self.inv_obs_fn(pred_obs_state_traj)
 
+        if self._batch_size is None:
+            self._batch_size = state.shape[0]
+
         assert pred_state_traj.shape == (self._batch_size, time_horizon, self.state_dim), (
             f"{pred_state_traj.shape}!=({self._batch_size}, {time_horizon}, {self.state_dim})"
         )

@@ -103,6 +103,7 @@ def main(cfg: DictConfig):
         trainer = Trainer(
             accelerator="cuda" if torch.cuda.is_available() and cfg.device != "cpu" else "cpu",
             devices=[cfg.device] if torch.cuda.is_available() and cfg.device != "cpu" else "auto",
+            # gradient_clip_val=1.0,
             logger=wandb_logger,
             log_every_n_steps=1,
             max_epochs=cfg.system.max_epochs if not cfg.debug_loops else 2,
