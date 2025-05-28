@@ -16,8 +16,7 @@ import escnn
 from escnn.nn import FieldType
 import re
 
-model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=481" #711" 179 481 529
-# model_path = "experiments/test/S:2025-05-16_16-22-18-OS:5-G:K4xC2-H:5-EH:5_E-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=227"
+model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=711" #711" 179 481 529
 
 terrains = ["curriculum"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
 modes = ["2025-05-16_16-16-41"]
@@ -124,19 +123,21 @@ start_idx = 0
 colors = plt.cm.tab10.colors  # Use a colormap for consistent colors
 color_idx = 0  # Initialize color index
 
+steps_ahead_to_plot = 1
+
 for name, dim in state_obs_names:
     end_idx = start_idx + dim
     plt.figure(figsize=(12, 6))
     for i in range(dim):
         color = colors[i % len(colors)]  # Cycle through colors for each component
         plt.plot(
-            next_state[:, -1, start_idx + i].cpu().numpy(),
+            next_state[:, steps_ahead_to_plot, start_idx + i].cpu().numpy(),
             label=f'Actual {name}[{i}]',
             alpha=0.5,
             color=color
         )
         plt.plot(
-            pred_next_state[:, -1, start_idx + i].cpu().numpy(),
+            pred_next_state[:, steps_ahead_to_plot, start_idx + i].cpu().numpy(),
             label=f'Predicted {name}[{i}]',
             linestyle='--',
             color=color,
