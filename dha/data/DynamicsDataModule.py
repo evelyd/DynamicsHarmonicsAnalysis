@@ -109,7 +109,7 @@ class DynamicsDataModule(LightningDataModule):
             state_obs=self.state_obs,
             action_obs=self.action_obs,
         )
-        if len(self.action_obs) > 0 and self.model_name == "c-dae":
+        if len(self.action_obs) > 0 and "c-dae" in self.model_name:
             dr_data_dict = asdict(recording_metadata)
             recording_metadata = DhaDynamicsRecording(**dr_data_dict)
             self.metadata: DhaDynamicsRecording = recording_metadata
@@ -122,7 +122,7 @@ class DynamicsDataModule(LightningDataModule):
         self.action_obs = recording_metadata.action_obs if self.action_obs is None else self.action_obs
         # Compute normalization mean and variance parameters for the state and action spaces.
         self.state_mean, self.state_var = recording_metadata.state_moments()
-        if len(self.action_obs) > 0 and self.model_name == "c-dae":
+        if len(self.action_obs) > 0 and "c-dae" in self.model_name:
             self.action_mean, self.action_var = recording_metadata.action_moments()
 
         # Ensure samples contain torch.Tensors and not numpy arrays.
@@ -138,7 +138,7 @@ class DynamicsDataModule(LightningDataModule):
         obs_to_remove = set(train_dataset.features.keys())
         obs_to_remove.discard("state")
 
-        if len(self.action_obs) > 0 and self.model_name == "c-dae":
+        if len(self.action_obs) > 0 and "c-dae" in self.model_name:
             map_fn_kwargs = dict(
                 state_observations=self.state_obs,
                 state_mean=self.state_mean if self.standardize else None,
@@ -207,7 +207,7 @@ class DynamicsDataModule(LightningDataModule):
 
         transfer_op_train_dataset, _, _ = datasets
 
-        if len(self.action_obs) > 0 and self.model_name == "c-dae":
+        if len(self.action_obs) > 0 and "c-dae" in self.model_name:
             self._transfer_op_train_dataset = transfer_op_train_dataset.with_format("torch").map(
             DhaDynamicsRecording.map_state_action_state,
             batched=True,
@@ -261,7 +261,7 @@ class DynamicsDataModule(LightningDataModule):
 
         log.info(f"Data preparation done in {time.time() - start_time:.2f} [s]")
 
-        if len(self.action_obs) > 0 and self.model_name == "c-dae":
+        if len(self.action_obs) > 0 and "c-dae" in self.model_name:
             return {"state_mean": self.state_mean, "state_var": self.state_var, "action_mean": self.action_mean, "action_var": self.action_var}
         else:
             return {"state_mean": self.state_mean, "state_var": self.state_var}

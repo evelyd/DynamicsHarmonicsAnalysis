@@ -244,6 +244,22 @@ def get_model(cfg, datamodule):
             enforce_constant_fn=cfg.model.constant_function,
             # reuse_input_observable=cfg.model.reuse_input_observable,
         )
+    elif cfg.model.name.lower() == "ec-dae":
+        assert cfg.system.pred_horizon >= 1
+        from dha.nn.ControlledEquivDynamicsAutoencoder import ControlledEquivDAE
+
+        model = ControlledEquivDAE(
+            state_rep=datamodule.state_type.representation,
+            action_rep=datamodule.action_field_type.representation,
+            obs_state_dim=obs_state_dim,
+            dt=datamodule.dt,
+            orth_w=cfg.model.orth_w,
+            obs_fn_params=obs_fn_params,
+            group_avg_trick=cfg.model.group_avg_trick,
+            state_dependent_obs_dyn=cfg.model.state_dependent_obs_dyn,
+            enforce_constant_fn=cfg.model.constant_function,
+            # reuse_input_observable=cfg.model.reuse_input_observable,
+        )
     elif cfg.model.name.lower() == "e-dpnet":
         assert cfg.model.max_ck_window_length <= cfg.system.pred_horizon, "max_ck_window_length <= pred_horizon"
         from dha.nn.EquivDeepPojections import EquivDPNet

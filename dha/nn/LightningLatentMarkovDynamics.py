@@ -12,8 +12,10 @@ from lightning import LightningModule
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 
 from dha.nn.EquivLinearDynamics import EquivLinearDynamics
+from dha.nn.ControlledEquivLinearDynamics import ControlledEquivLinearDynamics
 from dha.nn.latent_markov_dynamics import LatentMarkovDynamics
 from dha.nn.LinearDynamics import LinearDynamics
+from dha.nn.ControlledLinearDynamics import ControlledLinearDynamics
 from dha.nn.markov_dynamics import MarkovDynamics
 
 log = logging.getLogger(__name__)
@@ -182,7 +184,7 @@ class LightLatentMarkovDynamics(LightningModule):
         wandb_logger = self.logger.experiment
         # Get the learned transfer operator.
         linear_dynamics = self.model.obs_space_dynamics
-        if isinstance(linear_dynamics, EquivLinearDynamics):
+        if isinstance(linear_dynamics, EquivLinearDynamics) or isinstance(linear_dynamics, ControlledEquivLinearDynamics):
             df_eigvals = None
             model_state_type = linear_dynamics.state_type
             koop_operator, _ = linear_dynamics.transfer_op.expand_parameters()
@@ -206,7 +208,7 @@ class LightLatentMarkovDynamics(LightningModule):
 
             wandb_eigvals_table = wandb.Table(dataframe=df_eigvals)
 
-        elif isinstance(linear_dynamics, LinearDynamics):
+        elif isinstance(linear_dynamics, LinearDynamics) or isinstance(linear_dynamics, ControlledLinearDynamics):
             koop_operator = linear_dynamics.transfer_op.weight
             eig_vals = torch.linalg.eigvals(koop_operator).detach().cpu().numpy()
             # Get the eigenvalues of each kooman operator.
