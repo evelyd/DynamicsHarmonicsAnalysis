@@ -79,7 +79,7 @@ class ControlledLinearDynamics(LinearDynamics):
 
         Args:
             state: (batch, state_dim) Initial state of the system.
-            action: (batch, n_steps+1, action_dim) Action and future actions applied to the system.
+            action: (batch, n_steps, action_dim) Action and future actions applied to the system.
             n_steps: (int) Number of steps to predict.
 
         Returns:

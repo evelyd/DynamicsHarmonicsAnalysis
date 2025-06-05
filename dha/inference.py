@@ -16,7 +16,8 @@ import escnn
 from escnn.nn import FieldType
 import re
 
-model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=711" #711" 179 481 529
+# model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=711" #711" 179 481 529
+model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=514"
 
 terrains = ["curriculum"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
 modes = ["2025-05-16_16-16-41"]
@@ -69,7 +70,7 @@ joint_order_indices = utils.get_joint_order_indices()
 prediction_horizon = int(re.search(r"H:(\d+)", model_path).group(1))
 
 # Get the state, action, and next_state tensors
-state_batched, action_batched = utils.get_state_action_from_obs_batched(obs, joint_order_indices, q0)
+state_batched, action_batched = utils.get_state_action_from_obs_batched(obs, joint_angle_action, joint_order_indices, q0)
 
 state, action, next_state = utils.reshape_state_action(state_batched, action_batched, prediction_horizon)
 
@@ -81,11 +82,17 @@ action = action[:, :, env_idx].squeeze(0)
 next_state = next_state[:, :, env_idx].squeeze(0)
 
 # Normalize before passing to the model
-state_normed, action_normed, next_state_normed = utils.normalize(state_mean, state_std, action_mean, action_std, state, action, next_state)
+if "C-DAE" in model_path:
+    state_normed, action_normed, next_state_normed = utils.normalize(state_mean, state_std, action_mean, action_std, state, action, next_state)
+else:
+   state_normed, next_state_normed = utils.normalize_state(state_mean, state_std, state, next_state)
 
 # Predict the next state using the DAE model
 with torch.no_grad():
-    pred_dict = model(state_normed, action_normed, next_state_normed)
+    if "C-DAE" in model_path:
+        pred_dict = model(state_normed, action_normed, next_state_normed)
+    else:
+        pred_dict = model(state_normed, next_state_normed)
 
 # Compare the predicted state with the actual state
 predicted_state_normed = pred_dict['pred_state_traj'] # shape (batch, pred_horizon + 1, state_dim)
@@ -94,8 +101,17 @@ pred_next_state_normed = predicted_state_normed[:, 1:, :]
 pred_next_state = utils.denormalize(state_mean, state_std, pred_next_state_normed)
 
 # Compute the RMSE for this env idx
-rmse = torch.sqrt(torch.mean((next_state - pred_next_state) ** 2)) #, dim=(0, 1)))
-input(rmse)
+input(F"next state shape: {next_state.shape}, pred_next_state shape: {pred_next_state.shape}")
+state_pred_rmse = torch.sqrt(torch.mean((next_state - pred_next_state) ** 2)) #, dim=(0, 1)))
+input(state_pred_rmse)
+
+# Compute the difference between predicted and actual latent state
+#TODO this is not a denormalizable quantity, so i should not denormalize it
+pred_latent_state = pred_dict['pred_obs_state_traj'][:, 1:, :]  # shape (batch, pred_horizon + 1, latent_dim)
+next_latent_state = model.obs_fn(next_state_normed)  # shape (batch, latent_dim)
+input(f"pred_latent_state shape: {pred_latent_state.shape}, next_latent_state shape: {next_latent_state.shape}")
+obs_state_pred_rmse = torch.sqrt(torch.mean((next_latent_state - pred_latent_state) ** 2))  # shape (batch, latent_dim)
+input(obs_state_pred_rmse)
 
 # Count the unstable eigvals of A
 A = model.obs_space_dynamics.transfer_op.weight.detach().cpu().numpy()
@@ -113,7 +129,9 @@ state_obs_names = [
     ("base_vel", 3),
     ("base_ang_vel", 3),
     ("projected_gravity", 3),
-    ("a_joint_pos_S1", 24)
+    ("a_joint_pos_S1", 24),
+    ("velocity_commands_xy", 2),
+    ("velocity_commands_z", 1)
 ]
 
 # Start index for slicing
@@ -123,7 +141,7 @@ start_idx = 0
 colors = plt.cm.tab10.colors  # Use a colormap for consistent colors
 color_idx = 0  # Initialize color index
 
-steps_ahead_to_plot = 1
+steps_ahead_to_plot = -1
 
 for name, dim in state_obs_names:
     end_idx = start_idx + dim
@@ -149,29 +167,3 @@ for name, dim in state_obs_names:
     plt.legend()
     plt.show()
     start_idx = end_idx
-
-#TODO fix this
-# /home/edelia-iit.local/miniforge3/envs/env_isaaclab/lib/python3.10/site-packages/torch/nn/init.py:511: UserWarning: Initializing zero-element tensors is a no-op
-#   warnings.warn("Initializing zero-element tensors is a no-op")
-# Traceback (most recent call last):
-#   File "/home/edelia-iit.local/git/DynamicsHarmonicsAnalysis/dha/better_inference.py", line 34, in <module>
-#     model = utils.get_trained_dae_model(model_dir)
-#   File "/home/edelia-iit.local/git/DynamicsHarmonicsAnalysis/dha/utils/isaaclab_utils.py", line 234, in get_trained_dae_model
-#     model.load_state_dict(remove_state_dict_prefix(state_dict, "model."))
-#   File "/home/edelia-iit.local/miniforge3/envs/env_isaaclab/lib/python3.10/site-packages/torch/nn/modules/module.py", line 2584, in load_state_dict
-#     raise RuntimeError(
-# RuntimeError: Error(s) in loading state_dict for ControlledDAE:
-#         size mismatch for obs_fn.net.block_0.linear_0.weight: copying a param with shape torch.Size([512, 69]) from checkpoint, the shape in current model is torch.Size([0, 69]).
-#         size mismatch for obs_fn.net.block_1.linear_1.weight: copying a param with shape torch.Size([512, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for obs_fn.net.block_2.linear_2.weight: copying a param with shape torch.Size([512, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for obs_fn.net.block_3.linear_3.weight: copying a param with shape torch.Size([512, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for obs_fn.net.head.linear_4.weight: copying a param with shape torch.Size([345, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for inv_obs_fn.net.block_0.linear_0.weight: copying a param with shape torch.Size([512, 345]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for inv_obs_fn.net.block_1.linear_1.weight: copying a param with shape torch.Size([512, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for inv_obs_fn.net.block_2.linear_2.weight: copying a param with shape torch.Size([512, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for inv_obs_fn.net.block_3.linear_3.weight: copying a param with shape torch.Size([512, 512]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for inv_obs_fn.net.head.linear_4.weight: copying a param with shape torch.Size([69, 512]) from checkpoint, the shape in current model is torch.Size([69, 0]).
-#         size mismatch for obs_space_dynamics.transfer_op.weight: copying a param with shape torch.Size([345, 345]) from checkpoint, the shape in current model is torch.Size([0, 0]).
-#         size mismatch for obs_space_dynamics.transfer_op.bias: copying a param with shape torch.Size([345]) from checkpoint, the shape in current model is torch.Size([0]).
-#         size mismatch for obs_space_dynamics.control_op.weight: copying a param with shape torch.Size([345, 3]) from checkpoint, the shape in current model is torch.Size([0, 3]).
-#         size mismatch for obs_space_dynamics.control_op.bias: copying a param with shape torch.Size([345]) from checkpoint, the shape in current model is torch.Size([0]).

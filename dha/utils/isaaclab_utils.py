@@ -78,18 +78,19 @@ def get_state_action_from_obs(obs, joint_order_indices, q0):
 
     return x, u
 
-def get_state_action_from_obs_batched(obs, joint_order_indices, q0):
+def get_state_action_from_obs_batched(obs, action, joint_order_indices, q0):
     """
-    Takes a batched observation from the observation class and extracts the system state and action vectors.
+    Takes an observation from the observation class and extracts the system state and action vectors.
 
     Puts the state in the correct form for use in the DAE model.
 
-    State vector is composed as: $x = [q, \dot q, z, v, o, \omega] \in \mathbb R^{46}$
+    State vector is composed as: $x = [q, \dot q, v, \omega, a] \in \mathbb R^{46}$
     """
 
     # Define the default joint positions in Isaaclab
     q0_isaaclab = torch.tensor([0.10000000149011612, -0.10000000149011612, 0.10000000149011612, -0.10000000149011612, -0.800000011920929, -0.800000011920929, -0.800000011920929, -0.800000011920929, 1.6200000047683716, 1.6200000047683716, 1.6200000047683716, 1.6200000047683716], device=obs.device, dtype=obs.dtype) #TODO this is hardcoded, if the defaults change then I have to change this too
 
+    # Assume obs is ['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1', 'velocity_commands_xy', 'velocity_commands_z']
     base_vel = obs[:, :, :3]
     base_ang_vel = obs[:, :, 3:6]
     projected_gravity = obs[:, :, 6:9]
@@ -98,6 +99,9 @@ def get_state_action_from_obs_batched(obs, joint_order_indices, q0):
     joint_pos_rel = obs[:, :, 12:24]
     joint_vel = obs[:, :, 24:36]
     action_joint_pos = obs[:, :, 36:48]
+
+    # Assume action is ['current_action_S1']
+    current_action_S1, _ = compute_joint_pos_obs_batched(action, q0_isaaclab, q0, joint_order_indices)
 
     # Get the joint positions and velocities
     joint_pos_S1, _ = compute_joint_pos_obs_batched(joint_pos_rel, q0_isaaclab, q0, joint_order_indices)
@@ -108,8 +112,8 @@ def get_state_action_from_obs_batched(obs, joint_order_indices, q0):
     # Parametrize past action joint positions
     a_joint_pos_S1, _ = compute_joint_pos_obs_batched(action_joint_pos, q0_isaaclab, q0, joint_order_indices)
 
-    state_obs = [joint_pos_S1, joint_vel, base_vel, base_ang_vel, projected_gravity, a_joint_pos_S1]
-    action_obs = [velocity_commands_xy, velocity_commands_z]
+    state_obs = [joint_pos_S1, joint_vel, base_vel, base_ang_vel, projected_gravity, a_joint_pos_S1, velocity_commands_xy, velocity_commands_z]
+    action_obs = [current_action_S1]
 
     x = torch.cat(state_obs, dim=2).to(dtype=obs.dtype)
     u = torch.cat(action_obs, dim=2).to(dtype=obs.dtype)
@@ -220,11 +224,11 @@ def get_trained_dae_model(model_dir):
     num_layers, num_hidden_units, bias, obs_state_dim, state_dim = extract_trained_model_info(state_dict, model_dir)
 
     # Define the state and action type using the extracted representations
-    state_reps = [rep_Q_js, rep_TqQ_js, rep_Rd, rep_euler_xyz, rep_Rd, rep_Q_js] #['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1']
+    state_reps = [rep_Q_js, rep_TqQ_js, rep_Rd, rep_euler_xyz, rep_Rd, rep_Q_js, rep_xy, rep_euler_z] #['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1', 'velocity_commands_xy', 'velocity_commands_z']
     state_type = FieldType(gspace, representations=state_reps)
     state_type.size = sum(rep.size for rep in state_reps) + rep_Q_js.size + rep_Rd.size  # Count duplicates twice
     state_type = FieldType(gspace, representations=state_reps)
-    action_reps = [rep_xy, rep_euler_z]  # ['velocity_commands_xy', 'velocity_commands_z']
+    action_reps = [rep_Q_js]  # ['current_actions_S1']
     action_type = FieldType(gspace, representations=action_reps)
     action_type.size = sum(rep.size for rep in action_reps)
 
@@ -343,6 +347,14 @@ def get_latent_state(observations, model_path, dae_model, joint_order_indices, q
                 # DAE model
                 s = dae_model.obs_fn(x_normed)
         return s, x_normed, u_normed
+
+def normalize_state(state_mean, state_std, state, next_state):
+    """
+    Normalize the state tensors using the provided means and standard deviations.
+    """
+    state_normed = (state - state_mean) / state_std
+    next_state_normed = (next_state - state_mean) / state_std
+    return state_normed, next_state_normed
 
 def normalize(state_mean, state_std, action_mean, action_std, state, action, next_state):
     """
