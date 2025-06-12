@@ -196,12 +196,30 @@ class ControlledDAE(DAE):
 
         forecast_metrics["transfer_op_eigval_reg_loss"] = transfer_op_eigval_reg_loss
 
+        # Add a controllability regularization
+        A = self.obs_space_dynamics.transfer_op.weight
+        B = self.obs_space_dynamics.control_op.weight
+        sigma_min_threshold = 1e-2
+        AB_term = B
+        controllability_matrix = [B]
+        for i in range(A.shape[0] - 1):
+            AB_term = torch.matmul(A, AB_term)
+            controllability_matrix.append(AB_term)
+        controllability_matrix = torch.cat(controllability_matrix, 1)
+        # input(f"controllability matrix shape: {controllability_matrix.shape}")
+        sigma_C = torch.linalg.svdvals(controllability_matrix)
+        # Penalize singular values that are below the threshold, to encourage full-rank controllabiity matrix
+        controllability_singular_value_loss = torch.sum(torch.relu(sigma_min_threshold - sigma_C).pow(2))
+
+        forecast_metrics["controllability_singular_value_loss"] = controllability_singular_value_loss
+
         # Add the eigenvalue penalty to the loss
         loss = self.compute_loss(
             state_rec_loss=forecast_metrics["state_rec_loss"],
             state_pred_loss=forecast_metrics["state_pred_loss"],
             obs_pred_loss=forecast_metrics["obs_pred_loss"],
             transfer_op_eigval_reg_loss=forecast_metrics["transfer_op_eigval_reg_loss"],
+            controllability_singular_value_loss=forecast_metrics["controllability_singular_value_loss"],
         )
 
         # metrics = dict(**forecast_metrics, **obs_space_metrics)
@@ -209,7 +227,7 @@ class ControlledDAE(DAE):
         return loss, metrics
 
     def compute_loss(
-        self, state_rec_loss: Tensor, state_pred_loss: Tensor, obs_pred_loss: Tensor, transfer_op_eigval_reg_loss: Tensor, orth_reg: Optional[Tensor] = None
+        self, state_rec_loss: Tensor, state_pred_loss: Tensor, obs_pred_loss: Tensor, transfer_op_eigval_reg_loss: Tensor, controllability_singular_value_loss: Tensor, orth_reg: Optional[Tensor] = None
     ):
 
         # Compute the autoencoder loss, which is a combination of state reconstruction, state prediction, and observation prediction losses
@@ -223,8 +241,9 @@ class ControlledDAE(DAE):
 
         # Compute the regularization term for the transfer operator eigenvalues
         transfer_op_eigval_reg_loss = self.transfer_op_eigval_reg_w * transfer_op_eigval_reg_loss
+        controllability_singular_value_loss = 1e4 * self.transfer_op_eigval_reg_w * controllability_singular_value_loss
 
-        loss = ae_loss + transfer_op_eigval_reg_loss
+        loss = ae_loss + transfer_op_eigval_reg_loss + controllability_singular_value_loss
 
         return loss
 

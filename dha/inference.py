@@ -17,7 +17,14 @@ from escnn.nn import FieldType
 import re
 
 # model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=711" #711" 179 481 529
-model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=514"
+# model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=514"
+# model_path = "experiments/test/S:2025-06-09_11-23-53-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=687"
+
+# with controllability, stability reg wt same as eigvals
+# model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=869"
+
+# with controllability, stability reg wt 1e4 * eigvals
+model_path = "experiments/test/S:2025-05-16_16-16-41-OS:5-G:K4xC2-H:5-EH:5_C-DAE-Obs_w:1.0-Orth_w:0.0-Act:ELU-B:True-BN:False-LR:0.001-L:5-128_system=mini_cheetah/seed=638"
 
 terrains = ["curriculum"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
 modes = ["2025-05-16_16-16-41"]
@@ -118,6 +125,20 @@ A = model.obs_space_dynamics.transfer_op.weight.detach().cpu().numpy()
 eigvals = np.linalg.eigvals(A)
 unstable_eigvals = np.sum(np.abs(eigvals) > 1)
 input(f"Number of unstable eigenvalues for env {env_idx}: {unstable_eigvals}")
+
+# Check the number of singular vals in the controllability matrix below the threshold
+B = model.obs_space_dynamics.control_op.weight.detach().cpu().numpy()
+sigma_min_threshold = 1e-2
+AB_term = B
+controllability_matrix = [B]
+for i in range(A.shape[0] - 1):
+    AB_term = np.matmul(A, AB_term)
+    controllability_matrix.append(AB_term)
+controllability_matrix = np.concatenate(controllability_matrix, axis=1)
+sigma_C = np.linalg.svd(controllability_matrix, compute_uv=False)
+sigma_min_threshold = 1e-2
+num_singular_vals_below_threshold = np.sum(sigma_C < sigma_min_threshold).item()
+input(f"Number of singular values below {sigma_min_threshold} for env {env_idx}: {num_singular_vals_below_threshold}")
 
 # plot the states together
 import matplotlib.pyplot as plt
