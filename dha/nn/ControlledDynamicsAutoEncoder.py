@@ -207,9 +207,13 @@ class ControlledDAE(DAE):
             controllability_matrix.append(AB_term)
         controllability_matrix = torch.cat(controllability_matrix, 1)
         # input(f"controllability matrix shape: {controllability_matrix.shape}")
-        sigma_C = torch.linalg.svdvals(controllability_matrix)
-        # Penalize singular values that are below the threshold, to encourage full-rank controllabiity matrix
-        controllability_singular_value_loss = torch.sum(torch.relu(sigma_min_threshold - sigma_C).pow(2))
+        try:
+            sigma_C = torch.linalg.svdvals(controllability_matrix)
+            # Penalize singular values that are below the threshold, to encourage full-rank controllabiity matrix
+            controllability_singular_value_loss = torch.sum(torch.relu(sigma_min_threshold - sigma_C).pow(2)) if not torch.isnan(sigma_C).any() else torch.tensor(0.0, device=sigma_C.device)
+        except Exception as e:
+            log.error(f"Error computing SVD of controllability matrix: {e}")
+            controllability_singular_value_loss = torch.tensor(1e9, device=controllability_matrix.device)
 
         forecast_metrics["controllability_singular_value_loss"] = controllability_singular_value_loss
 
