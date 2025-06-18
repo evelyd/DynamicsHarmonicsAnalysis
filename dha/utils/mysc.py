@@ -384,8 +384,11 @@ def format_si(number, sig_figs=2):
 
 def safe_standardize(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor):
     mask = std > 0
-    x_normed = x
-    x_normed[:, :, mask] = (x[:, :, mask] - mean[mask]) / std[mask]
+    x_normed = x.clone()
+    if x.ndim == 2:
+        x_normed[:, mask] = (x[:, mask] - mean[mask]) / std[mask]
+    elif x.ndim == 3:
+        x_normed[:, :, mask] = (x[:, :, mask] - mean[mask]) / std[mask]
     return x_normed
 
 

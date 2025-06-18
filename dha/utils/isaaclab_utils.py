@@ -7,18 +7,35 @@ import numpy as np
 from dha.nn.EquivDynamicsAutoencoder import EquivDAE
 from dha.nn.DynamicsAutoEncoder import DAE
 from dha.nn.ControlledDynamicsAutoEncoder import ControlledDAE
+from dha.nn.ControlledEquivDynamicsAutoencoder import ControlledEquivDAE
 from dha.utils.mysc import class_from_name
 from morpho_symm.utils.robot_utils import load_symmetric_system
 from morpho_symm.utils.rep_theory_utils import group_rep_from_gens
 from dha.data.DhaDynamicsRecording import DhaDynamicsRecording
 from morpho_symm.data.DynamicsRecording import DynamicsRecording
 from typing import Iterable, List, Optional, Union
+from dha.utils.mysc import safe_standardize
+
 
 
 import escnn
 from escnn.nn import FieldType
+from morpho_symm.utils.algebra_utils import permutation_matrix
+from morpho_symm.utils.rep_theory_utils import group_rep_from_gens, Representation, Group
 
 import re
+
+def get_kinematic_three_rep_two(G: Group):
+    #  [0   1    2   3]
+    #  [RF, LF, RH, LH]
+    rep_kin_three = {G.identity: np.eye(2, dtype=int)}
+    gens = [permutation_matrix([1, 0])]
+    for h, rep_h in zip(G.generators, gens):
+        rep_kin_three[h] = rep_h
+
+    rep_kin_three = group_rep_from_gens(G, rep_kin_three)
+    rep_kin_three.name = "kin_three"
+    return rep_kin_three
 
 def compute_joint_pos_obs(q_js_ms_rel, q0_isaaclab, q0, joint_order_indices):
     q_js_ms = q_js_ms_rel[:, joint_order_indices] + q0_isaaclab[joint_order_indices] + q0[7:]  # Add offset to the measurements from UMich
@@ -78,7 +95,7 @@ def get_state_action_from_obs(obs, joint_order_indices, q0):
 
     return x, u
 
-def get_state_action_from_obs_batched(obs, action, joint_order_indices, q0):
+def get_state_action_from_obs_batched(robot_name, obs, action, joint_order_indices, q0):
     """
     Takes an observation from the observation class and extracts the system state and action vectors.
 
@@ -87,33 +104,73 @@ def get_state_action_from_obs_batched(obs, action, joint_order_indices, q0):
     State vector is composed as: $x = [q, \dot q, v, \omega, a] \in \mathbb R^{46}$
     """
 
-    # Define the default joint positions in Isaaclab
-    q0_isaaclab = torch.tensor([0.10000000149011612, -0.10000000149011612, 0.10000000149011612, -0.10000000149011612, -0.800000011920929, -0.800000011920929, -0.800000011920929, -0.800000011920929, 1.6200000047683716, 1.6200000047683716, 1.6200000047683716, 1.6200000047683716], device=obs.device, dtype=obs.dtype) #TODO this is hardcoded, if the defaults change then I have to change this too
+    if robot_name == "mini_cheetah":
+        # Define the default joint positions in Isaaclab
+        q0_isaaclab = torch.tensor([0.10000000149011612, -0.10000000149011612, 0.10000000149011612, -0.10000000149011612, -0.800000011920929, -0.800000011920929, -0.800000011920929, -0.800000011920929, 1.6200000047683716, 1.6200000047683716, 1.6200000047683716, 1.6200000047683716], device=obs.device, dtype=obs.dtype) #TODO this is hardcoded, if the defaults change then I have to change this too
 
-    # Assume obs is ['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1', 'velocity_commands_xy', 'velocity_commands_z']
-    base_vel = obs[:, :, :3]
-    base_ang_vel = obs[:, :, 3:6]
-    projected_gravity = obs[:, :, 6:9]
-    velocity_commands_xy = obs[:, :, 9:11] # Rep: Rd for xy, euler xyz for heading? idk
-    velocity_commands_z = obs[:, :, 11].unsqueeze(-1) # Rep: Rd for xy, euler xyz for heading? idk
-    joint_pos_rel = obs[:, :, 12:24]
-    joint_vel = obs[:, :, 24:36]
-    action_joint_pos = obs[:, :, 36:48]
+        # Assume obs is ['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1', 'velocity_commands_xy', 'velocity_commands_z']
+        base_vel = obs[:, :, :3]
+        base_ang_vel = obs[:, :, 3:6]
+        projected_gravity = obs[:, :, 6:9]
+        velocity_commands_xy = obs[:, :, 9:11] # Rep: Rd for xy, euler xyz for heading? idk
+        velocity_commands_z = obs[:, :, 11].unsqueeze(-1) # Rep: Rd for xy, euler xyz for heading? idk
+        joint_pos_rel = obs[:, :, 12:24]
+        joint_vel = obs[:, :, 24:36]
+        action_joint_pos = obs[:, :, 36:48]
 
-    # Assume action is ['current_action_S1']
-    current_action_S1, _ = compute_joint_pos_obs_batched(action, q0_isaaclab, q0, joint_order_indices)
+        # Assume action is ['current_action_S1']
+        current_action_S1, _ = compute_joint_pos_obs_batched(action, q0_isaaclab, q0, joint_order_indices)
 
-    # Get the joint positions and velocities
-    joint_pos_S1, _ = compute_joint_pos_obs_batched(joint_pos_rel, q0_isaaclab, q0, joint_order_indices)
+        # Get the joint positions and velocities
+        joint_pos_S1, _ = compute_joint_pos_obs_batched(joint_pos_rel, q0_isaaclab, q0, joint_order_indices)
 
-    # Reorder joint velocities
-    joint_vel = joint_vel[:, :, joint_order_indices]
+        # Reorder joint velocities
+        joint_vel = joint_vel[:, :, joint_order_indices]
 
-    # Parametrize past action joint positions
-    a_joint_pos_S1, _ = compute_joint_pos_obs_batched(action_joint_pos, q0_isaaclab, q0, joint_order_indices)
+        # Parametrize past action joint positions
+        a_joint_pos_S1, _ = compute_joint_pos_obs_batched(action_joint_pos, q0_isaaclab, q0, joint_order_indices)
 
-    state_obs = [joint_pos_S1, joint_vel, base_vel, base_ang_vel, projected_gravity, a_joint_pos_S1, velocity_commands_xy, velocity_commands_z]
-    action_obs = [current_action_S1]
+        state_obs = [joint_pos_S1, joint_vel, base_vel, base_ang_vel, projected_gravity, a_joint_pos_S1, velocity_commands_xy, velocity_commands_z]
+        action_obs = [current_action_S1]
+
+    else: # a1
+        joint_order = [
+            'FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint',
+            'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint',
+            'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint',
+            'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint']
+        default_joint_angles = {
+            'FL_hip_joint': 0.0,
+            'FR_hip_joint': 0.0,
+            'RL_hip_joint': 0.0,
+            'RR_hip_joint': 0.0,
+            'FL_thigh_joint': -1.396,  # -80 deg
+            'FR_thigh_joint': -1.396,
+            'RL_thigh_joint': -1.396,
+            'RR_thigh_joint': -1.396,
+            'FL_calf_joint': 2.356,    # 135 deg
+            'FR_calf_joint': 2.356,
+            'RL_calf_joint': 2.356,
+            'RR_calf_joint': 2.356,
+        }
+        default_dof_pos = torch.tensor([default_joint_angles[j] for j in joint_order], device=obs.device, dtype=obs.dtype)  # (12,)
+
+        joint_pos_rel = obs[:, :, 9:21]  # 12D
+        joint_pos = joint_pos_rel + default_dof_pos.unsqueeze(0)  # Add the default joint angles to the relative positions
+
+        # joint_vel, actions
+        joint_vel = obs[:, :, 21:33]  # 12D
+        prev_actions = obs[:, :, 33:45]    # 12D
+
+        # 其他观测量（含 projected_gravity, projected_forward_vec, command, etc.）
+        projected_gravity = obs[:, :, 0:3]
+        projected_forward_vec = obs[:, :, 3:6]
+        xy_commands = obs[:, :, 6:8]
+        z_commands = obs[:, :, 8:9]  # 1D, euler_z
+        clock_inputs = obs[:, :, 45:47]
+
+        state_obs = [projected_gravity, projected_forward_vec, xy_commands, z_commands, joint_pos, joint_vel, prev_actions, clock_inputs]
+        action_obs = [action]
 
     x = torch.cat(state_obs, dim=2).to(dtype=obs.dtype)
     u = torch.cat(action_obs, dim=2).to(dtype=obs.dtype)
@@ -157,7 +214,7 @@ def extract_trained_model_info(state_dict, model_dir) -> (int, int, bool, int):
         if ".obs_fn.net" in key:
             if "model.obs_fn.net.block_" in key and "weight" in key:
                 layers += 1
-            if "E-DAE" in model_dir:
+            if "E-DAE" in model_dir or "EC-DAE" in model_dir:
                 if "model.obs_fn.net.block_0.linear_0" in key and "matrix" in key:
                     state_dim = state_dict[key].shape[1]
             else:
@@ -204,33 +261,57 @@ def get_trained_dae_model(model_dir):
 
     # Define the state representation
     # G is the symmetry group of the system
-    robot, G = load_symmetric_system(robot_name="mini_cheetah")
+    if "mini_cheetah" in model_dir:
+        robot, G = load_symmetric_system(robot_name="mini_cheetah")
 
-    # Create the state representations
-    #TODO this needs to be edited if actions are added
-    gspace = escnn.gspaces.no_base_space(G)
-    # Extract the representations from G.representations.items()
-    rep_Q_js = G.representations['Q_js']
-    rep_Rd = G.representations['R3']
-    rep_TqQ_js = G.representations['TqQ_js']
-    rep_z = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
-    rep_z.name = "base_z"
-    rep_xy = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[:2, :2].reshape((2, 2)) for h in G.elements if h != G.identity})
-    rep_xy.name = "base_xy"
-    rep_euler_xyz = G.representations['euler_xyz']
-    rep_euler_z = group_rep_from_gens(G, rep_H={h: rep_euler_xyz(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
-    rep_euler_z.name = "euler_z"
+        # Create the state representations
+        gspace = escnn.gspaces.no_base_space(G)
+        # Extract the representations from G.representations.items()
+        rep_Q_js = G.representations['Q_js']
+        rep_Rd = G.representations['R3']
+        rep_TqQ_js = G.representations['TqQ_js']
+        rep_z = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
+        rep_z.name = "base_z"
+        rep_xy = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[:2, :2].reshape((2, 2)) for h in G.elements if h != G.identity})
+        rep_xy.name = "base_xy"
+        rep_euler_xyz = G.representations['euler_xyz']
+        rep_euler_z = group_rep_from_gens(G, rep_H={h: rep_euler_xyz(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
+        rep_euler_z.name = "euler_z"
+
+        # Define the state and action type using the extracted representations
+        state_reps = [rep_Q_js, rep_TqQ_js, rep_Rd, rep_euler_xyz, rep_Rd, rep_Q_js, rep_xy, rep_euler_z] #['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1', 'velocity_commands_xy', 'velocity_commands_z']
+        state_type = FieldType(gspace, representations=state_reps)
+        state_type.size = sum(rep.size for rep in state_reps) + rep_Q_js.size + rep_Rd.size  # Count duplicates twice
+        state_type = FieldType(gspace, representations=state_reps)
+        action_reps = [rep_Q_js]  # ['current_actions_S1']
+        action_type = FieldType(gspace, representations=action_reps)
+        action_type.size = sum(rep.size for rep in action_reps)
+
+    else: # a1
+        robot, G = load_symmetric_system(robot_name="a1")
+
+        # Create the state representations
+        gspace = escnn.gspaces.no_base_space(G)
+        # Extract the representations from G.representations.items()
+        rep_Rd = G.representations['R3']
+        rep_TqQ_js = G.representations['TqQ_js']
+        rep_kin_three = get_kinematic_three_rep_two(G)
+        rep_xy = group_rep_from_gens(G, rep_H={h: rep_Rd(h)[:2, :2].reshape((2, 2)) for h in G.elements if h != G.identity})
+        rep_xy.name = "base_xy"
+        rep_euler_xyz = G.representations['euler_xyz']
+        rep_euler_z = group_rep_from_gens(G, rep_H={h: rep_euler_xyz(h)[2, 2].reshape((1, 1)) for h in G.elements if h != G.identity})
+        rep_euler_z.name = "euler_z"
+
+        # Define the state and action type using the extracted representations
+        state_reps = [rep_Rd, rep_Rd, rep_xy, rep_euler_z, rep_TqQ_js, rep_TqQ_js, rep_TqQ_js, rep_kin_three] #['projected_gravity', 'projected_forward_vec', 'xy_commands', 'z_commands', 'joint_pos', 'joint_vel', 'prev_actions', 'clock_inputs'] # base pose
+        state_type = FieldType(gspace, representations=state_reps)
+        state_type.size = sum(rep.size for rep in state_reps) + rep_Rd.size + 2 * rep_TqQ_js.size  # Count duplicates twice
+        state_type = FieldType(gspace, representations=state_reps)
+        action_reps = [rep_TqQ_js]  # ['actions']
+        action_type = FieldType(gspace, representations=action_reps)
+        action_type.size = sum(rep.size for rep in action_reps)
 
     num_layers, num_hidden_units, bias, obs_state_dim, state_dim = extract_trained_model_info(state_dict, model_dir)
-
-    # Define the state and action type using the extracted representations
-    state_reps = [rep_Q_js, rep_TqQ_js, rep_Rd, rep_euler_xyz, rep_Rd, rep_Q_js, rep_xy, rep_euler_z] #['joint_pos_S1', 'joint_vel', 'base_vel', 'base_ang_vel', 'projected_gravity', 'a_joint_pos_S1', 'velocity_commands_xy', 'velocity_commands_z']
-    state_type = FieldType(gspace, representations=state_reps)
-    state_type.size = sum(rep.size for rep in state_reps) + rep_Q_js.size + rep_Rd.size  # Count duplicates twice
-    state_type = FieldType(gspace, representations=state_reps)
-    action_reps = [rep_Q_js]  # ['current_actions_S1']
-    action_type = FieldType(gspace, representations=action_reps)
-    action_type.size = sum(rep.size for rep in action_reps)
 
     dt = 0.02
     orth_w_match = re.search(r"Orth_w:([\d\.]+)", model_dir)
@@ -244,7 +325,7 @@ def get_trained_dae_model(model_dir):
     activation = obs_pred_w_match.group(1) if act_match else 'ELU'
     batch_norm = False
 
-    if not "E-DAE" in model_dir:
+    if not "E-DAE" in model_dir and not "EC-DAE" in model_dir:
         activation = class_from_name("torch.nn", activation)
 
     obs_fn_params = {'num_layers': num_layers, 'num_hidden_units': num_hidden_units, 'activation': activation, 'bias': bias, 'batch_norm': batch_norm}
@@ -254,6 +335,18 @@ def get_trained_dae_model(model_dir):
     if "E-DAE" in model_dir:
         model = EquivDAE(
             state_rep=state_type.representation,
+            obs_state_dim=obs_state_dim,
+            dt=dt,
+            orth_w=orth_w,
+            obs_fn_params=obs_fn_params,
+            group_avg_trick=group_avg_trick,
+            state_dependent_obs_dyn=state_dependent_obs_dyn,
+            enforce_constant_fn=enforce_constant_fn,
+        )
+    elif "EC-DAE" in model_dir:
+        model = ControlledEquivDAE(
+            state_rep=state_type.representation,
+            action_rep=action_type.representation,
             obs_state_dim=obs_state_dim,
             dt=dt,
             orth_w=orth_w,
@@ -331,6 +424,7 @@ def get_pybullet_q0(device):
 def get_joint_order_indices():
     usd_joint_order = ['FL_hip_joint', 'FR_hip_joint', 'RL_hip_joint', 'RR_hip_joint', 'FL_thigh_joint', 'FR_thigh_joint', 'RL_thigh_joint', 'RR_thigh_joint', 'FL_calf_joint', 'FR_calf_joint', 'RL_calf_joint', 'RR_calf_joint']
     joint_order_for_morphosymm = ['FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint', 'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint', 'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint', 'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint']
+
     joint_order_indices = [usd_joint_order.index(joint) for joint in joint_order_for_morphosymm]
     return joint_order_indices
 
@@ -352,17 +446,22 @@ def normalize_state(state_mean, state_std, state, next_state):
     """
     Normalize the state tensors using the provided means and standard deviations.
     """
-    state_normed = (state - state_mean) / state_std
-    next_state_normed = (next_state - state_mean) / state_std
+    # state_normed = (state - state_mean) / state_std
+    # next_state_normed = (next_state - state_mean) / state_std
+    state_normed = safe_standardize(state_normed, state_mean, state_std)
+    next_state_normed = safe_standardize(next_state_normed, state_mean, state_std)
     return state_normed, next_state_normed
 
 def normalize(state_mean, state_std, action_mean, action_std, state, action, next_state):
     """
     Normalize the state and action tensors using the provided means and standard deviations.
     """
-    state_normed = (state - state_mean) / state_std
-    action_normed = (action - action_mean) / action_std
-    next_state_normed = (next_state - state_mean) / state_std
+    # state_normed = (state - state_mean) / state_std
+    # action_normed = (action - action_mean) / action_std
+    # next_state_normed = (next_state - state_mean) / state_std
+    state_normed = safe_standardize(state, state_mean, state_std)
+    action_normed = safe_standardize(action, action_mean, action_std)
+    next_state_normed = safe_standardize(next_state, state_mean, state_std)
     return state_normed, action_normed, next_state_normed
 
 def denormalize(state_mean, state_std, state_normed):
