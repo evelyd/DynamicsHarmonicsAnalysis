@@ -382,6 +382,12 @@ def format_si(number, sig_figs=2):
     r = f"{base:.{sig_figs}f}{si_prefixes.get(rounded_exp, 'e' + str(rounded_exp))}"
     return r
 
+def safe_standardize(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor):
+    mask = std > 0
+    x_normed = x
+    x_normed[:, :, mask] = (x[:, :, mask] - mean[mask]) / std[mask]
+    return x_normed
+
 
 # Test the utility functions with emphasis on time order preservation
 batch_size, time_steps, old_dim = 3, 5, 4

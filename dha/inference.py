@@ -10,7 +10,7 @@ from dha.nn.DynamicsAutoEncoder import DAE
 from dha.utils.mysc import class_from_name
 from morpho_symm.utils.robot_utils import load_symmetric_system
 from morpho_symm.utils.rep_theory_utils import group_rep_from_gens
-import dha.utils.isaaclab_utils as utils
+import dha.utils.isaaclab_utils as isaaclab_utils
 
 import escnn
 from escnn.nn import FieldType
@@ -31,7 +31,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 dha_dir = os.path.dirname(dha.__file__)
 model_dir = os.path.join(dha_dir, model_path)
 
-model = utils.get_trained_dae_model(model_dir).to(device)
+model = isaaclab_utils.get_trained_dae_model(model_dir).to(device)
 model.eval()  # Set the model to evaluation mode
 
  # Get the normalization info for the DAE model
@@ -40,7 +40,7 @@ norm_dir = os.path.join(model_dir, "state_mean_var.npy")
 norm_data = np.load(norm_dir, allow_pickle=True).item()
 
 # Extract state_mean and state_var values
-state_mean, state_std, action_mean, action_std = utils.get_stats(model_path, device)
+state_mean, state_std, action_mean, action_std = isaaclab_utils.get_stats(model_path, device)
 
 # Get some data to test the model
 all_data = []
@@ -59,9 +59,9 @@ action_batched = np.concatenate(all_action_data, axis=1)
 obs = torch.tensor(state_batched, device=device).float()
 joint_angle_action = torch.tensor(action_batched, device=device).float() # joint angle action
 
-q0 = utils.get_pybullet_q0(device)
+q0 = isaaclab_utils.get_pybullet_q0(device)
 
-joint_order_indices = utils.get_joint_order_indices()
+joint_order_indices = isaaclab_utils.get_joint_order_indices()
 
 # Extract the state_obs and action_obs (action is velocity commands)
 # latent_state, state, action = utils.get_latent_state(obs, model_path, model, joint_order_indices, q0, state_mean, state_std, action_mean, action_std)
@@ -70,9 +70,9 @@ joint_order_indices = utils.get_joint_order_indices()
 prediction_horizon = int(re.search(r"H:(\d+)", model_path).group(1))
 
 # Get the state, action, and next_state tensors
-state_batched, action_batched = utils.get_state_action_from_obs_batched(obs, joint_angle_action, joint_order_indices, q0)
+state_batched, action_batched = isaaclab_utils.get_state_action_from_obs_batched(obs, joint_angle_action, joint_order_indices, q0)
 
-state, action, next_state = utils.reshape_state_action(state_batched, action_batched, prediction_horizon)
+state, action, next_state = isaaclab_utils.reshape_state_action(state_batched, action_batched, prediction_horizon)
 
 # Choose an env to look at
 env_idx = 140
@@ -83,9 +83,9 @@ next_state = next_state[:, :, env_idx].squeeze(0)
 
 # Normalize before passing to the model
 if "C-DAE" in model_path:
-    state_normed, action_normed, next_state_normed = utils.normalize(state_mean, state_std, action_mean, action_std, state, action, next_state)
+    state_normed, action_normed, next_state_normed = isaaclab_utils.normalize(state_mean, state_std, action_mean, action_std, state, action, next_state)
 else:
-   state_normed, next_state_normed = utils.normalize_state(state_mean, state_std, state, next_state)
+   state_normed, next_state_normed = isaaclab_utils.normalize_state(state_mean, state_std, state, next_state)
 
 # Predict the next state using the DAE model
 with torch.no_grad():
@@ -98,7 +98,7 @@ with torch.no_grad():
 predicted_state_normed = pred_dict['pred_state_traj'] # shape (batch, pred_horizon + 1, state_dim)
 pred_next_state_normed = predicted_state_normed[:, 1:, :]
 
-pred_next_state = utils.denormalize(state_mean, state_std, pred_next_state_normed)
+pred_next_state = isaaclab_utils.denormalize(state_mean, state_std, pred_next_state_normed)
 
 # Compute the RMSE for this env idx
 input(F"next state shape: {next_state.shape}, pred_next_state shape: {pred_next_state.shape}")
