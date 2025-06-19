@@ -382,13 +382,14 @@ def format_si(number, sig_figs=2):
     r = f"{base:.{sig_figs}f}{si_prefixes.get(rounded_exp, 'e' + str(rounded_exp))}"
     return r
 
-def safe_standardize(x: torch.Tensor, mean: torch.Tensor, std: torch.Tensor):
+def safe_standardize(x_normed: torch.Tensor | np.ndarray, mean: torch.Tensor | np.ndarray, std: torch.Tensor | np.ndarray):
     mask = std > 0
-    x_normed = x.clone()
-    if x.ndim == 2:
-        x_normed[:, mask] = (x[:, mask] - mean[mask]) / std[mask]
-    elif x.ndim == 3:
-        x_normed[:, :, mask] = (x[:, :, mask] - mean[mask]) / std[mask]
+    if isinstance(x_normed, torch.Tensor):
+        x_normed = x_normed.clone()
+    if x_normed.ndim == 2:
+        x_normed[:, mask] = (x_normed[:, mask] - mean[mask]) / std[mask]
+    elif x_normed.ndim == 3:
+        x_normed[:, :, mask] = (x_normed[:, :, mask] - mean[mask]) / std[mask]
     return x_normed
 
 
