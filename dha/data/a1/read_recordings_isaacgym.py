@@ -120,7 +120,10 @@ def convert_cyberdog2_isaacgym_recordings(data_paths: list):
 
     state = np.concatenate(all_obs, axis=0)  # shape: (total_frames, 141)
     action = np.concatenate(all_actions, axis=0)  # shape: (total_frames, 12)
-    assert state.shape[-1] == 141, f"Expect 141D obs (3 x 47), got {state.shape[-1]}"
+    if "push_door" in str(data_paths[0]):
+        assert state.shape[-1] == 5*43, f"Expect 215D obs (5 x 43), got {state.shape[-1]}"
+    else:
+        assert state.shape[-1] == 3*47, f"Expect 141D obs (3 x 47), got {state.shape[-1]}"
 
     num_timesteps = 1000
     num_envs = 32
@@ -134,7 +137,10 @@ def convert_cyberdog2_isaacgym_recordings(data_paths: list):
 
     # # 每帧中提取当前帧（最后 47 维）
     # state = obs_flat[:, -47:]
-    state = state[:, -47:]  # shape: (total_frames, 47)
+    if "push_door" in str(data_paths[0]):
+        state = state[:, -43:]  # shape: (total_frames, 43)
+    else:
+        state = state[:, -47:] # shape: (total_frames, 47)
 
     robot, G = load_symmetric_system(robot_name="a1")
     rep_QJ = G.representations["Q_js"]  # Used to transform joint-space position coordinates q_js ∈ Q_js
@@ -173,65 +179,97 @@ def convert_cyberdog2_isaacgym_recordings(data_paths: list):
     }
     default_dof_pos = np.array([default_joint_angles[j] for j in joint_order])  # (12,)
 
-    # 恢复 absolute joint_pos
-    joint_pos_rel = state[:, 9:21]  # 12D
-    joint_pos = joint_pos_rel + default_dof_pos[np.newaxis, :]
+    if "push_door" in str(data_paths[0]):
+        projected_gravity = state[:, 0:3]
+        projected_forward_vec = state[:, 3:6]
+        joint_pos_rel = state[:, 6:18]  # 12D
+        joint_pos = joint_pos_rel + default_dof_pos[np.newaxis, :]
+        prev_actions = state[:, 18:30]    # 12D
+        phase_input = state[:, 30:32]  # 2D
+        base_pos = state[:, 32:35]  # 3D
+        door_bottom_corner_pos = state[:, 35:38]  # 3D
+        door_normal_vec = state[:, 38:41]  # 3D
+        lr_vec = state[:, 41:43]  # 2D
+    else:
+        # 恢复 absolute joint_pos
+        joint_pos_rel = state[:, 9:21]  # 12D
+        joint_pos = joint_pos_rel + default_dof_pos[np.newaxis, :]
 
-    # joint_vel, actions
-    joint_vel = state[:, 21:33]  # 12D
-    prev_actions = state[:, 33:45]    # 12D
+        # joint_vel, actions
+        joint_vel = state[:, 21:33]  # 12D
+        prev_actions = state[:, 33:45]    # 12D
 
-    # 其他观测量（含 projected_gravity, projected_forward_vec, command, etc.）
-    projected_gravity = state[:, 0:3]
-    projected_forward_vec = state[:, 3:6]
-    xy_commands = state[:, 6:8]
-    z_commands = state[:, 8:9]  # 1D, euler_z
-    clock_inputs = state[:, 45:47]
-
-    import matplotlib.pyplot as plt
-    # plot the commands
-    plt.figure(figsize=(10, 6))
-    plt.plot(xy_commands[:, 0], label='Command X', color='blue')
-    plt.plot(xy_commands[:, 1], label='Command Y', color='orange')
-    plt.plot(z_commands[:, 0], label='Command Z', color='green')
-    plt.title('Commands Over Time')
-    plt.xlabel('Time Steps')
-    plt.ylabel('Command Values')
-    plt.legend()
-    plt.grid()
-    plt.show()
+        # 其他观测量（含 projected_gravity, projected_forward_vec, command, etc.）
+        projected_gravity = state[:, 0:3]
+        projected_forward_vec = state[:, 3:6]
+        xy_commands = state[:, 6:8]
+        z_commands = state[:, 8:9]  # 1D, euler_z
+        clock_inputs = state[:, 45:47]
 
     # 建立 DynamicsRecording
     dt = 0.02
-    data_recording = DynamicsRecording(
-        description="CyberDog2 Observation Only",
-        info=dict(num_traj=len(data_paths), trajectory_length=state.shape[0]),
-        dynamics_parameters=dict(dt=dt, group=dict(group_name=G.name, group_order=G.order())),
-        recordings=dict(
-            joint_pos=joint_pos[None, ...].astype(np.float32),
-            joint_vel=joint_vel[None, ...].astype(np.float32),
-            prev_actions=prev_actions[None, ...].astype(np.float32),
-            projected_gravity=projected_gravity[None, ...].astype(np.float32),
-            projected_forward_vec=projected_forward_vec[None, ...].astype(np.float32),
-            xy_commands=xy_commands[None, ...].astype(np.float32),
-            z_commands=z_commands[None, ...].astype(np.float32),
-            clock_inputs=clock_inputs[None, ...].astype(np.float32),
-            actions=action[None, ...].astype(np.float32),
-        ),
-        state_obs=("projected_gravity", "projected_forward_vec", "xy_commands", "z_commands", "joint_pos", "joint_vel", "prev_actions", "clock_inputs"),
-        action_obs=("actions",),
-        obs_representations=dict(
-            projected_gravity=rep_Rd,
-            projected_forward_vec=rep_Rd,
-            xy_commands=rep_xy,
-            z_commands=rep_euler_z,
-            joint_pos=rep_TqQJ,
-            joint_vel=rep_TqQJ,
-            prev_actions=rep_TqQJ,
-            clock_inputs=rep_kin_three,
-            actions=rep_TqQJ,
+    if "push_door" in str(data_paths[0]):
+        data_recording = DynamicsRecording(
+            description="CyberDog2 Observation Only",
+            info=dict(num_traj=len(data_paths), trajectory_length=state.shape[0]),
+            dynamics_parameters=dict(dt=dt, group=dict(group_name=G.name, group_order=G.order())),
+            recordings=dict(
+                projected_gravity=projected_gravity[None, ...].astype(np.float32),
+                projected_forward_vec=projected_forward_vec[None, ...].astype(np.float32),
+                joint_pos=joint_pos[None, ...].astype(np.float32),
+                prev_actions=prev_actions[None, ...].astype(np.float32),
+                phase_input=phase_input[None, ...].astype(np.float32),
+                base_pos=base_pos[None, ...].astype(np.float32),
+                door_bottom_corner_pos=door_bottom_corner_pos[None, ...].astype(np.float32),
+                door_normal_vec=door_normal_vec[None, ...].astype(np.float32),
+                lr_vec=lr_vec[None, ...].astype(np.float32),
+                actions=action[None, ...].astype(np.float32),
+            ),
+            state_obs=("projected_gravity", "projected_forward_vec", "joint_pos", "prev_actions", "phase_input", "base_pos", "door_bottom_corner_pos", "door_normal_vec", "lr_vec"),
+            action_obs=("actions",),
+            obs_representations=dict(
+                projected_gravity=rep_Rd,
+                projected_forward_vec=rep_Rd,
+                joint_pos=rep_TqQJ,
+                prev_actions=rep_TqQJ,
+                phase_input=rep_kin_three,
+                base_pos=rep_Rd,
+                door_bottom_corner_pos=rep_Rd,
+                door_normal_vec=rep_Rd,
+                lr_vec=rep_kin_three,
+                actions=rep_TqQJ,
+            )
         )
-    )
+    else: # stand dance or walk slope
+        data_recording = DynamicsRecording(
+            description="CyberDog2 Observation Only",
+            info=dict(num_traj=len(data_paths), trajectory_length=state.shape[0]),
+            dynamics_parameters=dict(dt=dt, group=dict(group_name=G.name, group_order=G.order())),
+            recordings=dict(
+                joint_pos=joint_pos[None, ...].astype(np.float32),
+                joint_vel=joint_vel[None, ...].astype(np.float32),
+                prev_actions=prev_actions[None, ...].astype(np.float32),
+                projected_gravity=projected_gravity[None, ...].astype(np.float32),
+                projected_forward_vec=projected_forward_vec[None, ...].astype(np.float32),
+                xy_commands=xy_commands[None, ...].astype(np.float32),
+                z_commands=z_commands[None, ...].astype(np.float32),
+                clock_inputs=clock_inputs[None, ...].astype(np.float32),
+                actions=action[None, ...].astype(np.float32),
+            ),
+            state_obs=("projected_gravity", "projected_forward_vec", "xy_commands", "z_commands", "joint_pos", "joint_vel", "prev_actions", "clock_inputs"),
+            action_obs=("actions",),
+            obs_representations=dict(
+                projected_gravity=rep_Rd,
+                projected_forward_vec=rep_Rd,
+                xy_commands=rep_xy,
+                z_commands=rep_euler_z,
+                joint_pos=rep_TqQJ,
+                joint_vel=rep_TqQJ,
+                prev_actions=rep_TqQJ,
+                clock_inputs=rep_kin_three,
+                actions=rep_TqQJ,
+            )
+        )
 
     # Compute the mean and variance of all observations considering symmetry constraints.
     for obs_name in data_recording.recordings.keys():
@@ -251,7 +289,7 @@ def convert_cyberdog2_isaacgym_recordings(data_paths: list):
 
 
 if __name__ == "__main__":
-    tasks = ["stand_dance_cyber"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
+    tasks = ["walk_slope_cyber"] #, "uneven_easy", "uneven_medium", "uneven_hard_squares"]
     # modes = ["2025-05-16_16-16-41"]
     # modes = "20250521_203857"
     modes = ["from_weishu"]
