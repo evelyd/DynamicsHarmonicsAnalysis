@@ -1,6 +1,7 @@
 from morpho_symm.data.DynamicsRecording import DynamicsRecording
 import numpy as np
 from typing import Iterable, List, Optional, Union
+from dha.utils.mysc import safe_standardize
 
 class DhaDynamicsRecording(DynamicsRecording):
     """
@@ -52,7 +53,7 @@ class DhaDynamicsRecording(DynamicsRecording):
         # Define the action at time t and the actions at time [t+1, t+pred_horizon]
         action_traj = np.concatenate(action_obs, axis=-1).reshape(batch_size, time_horizon, -1)
         if action_mean is not None and action_std is not None:
-            action_traj = (action_traj - action_mean) / action_std
+            action_traj = safe_standardize(action_traj, action_mean, action_std)
         return dict(action=action_traj[:, :-1])
 
     @staticmethod
