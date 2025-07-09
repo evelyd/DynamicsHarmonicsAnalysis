@@ -1,0 +1,29 @@
+defaults:
+  - base_system
+
+name: 'ergocub'
+subgroup_id: null
+group: 'C2'
+
+max_epochs: 200
+early_stop_epochs: 30
+standardize: True
+
+obs_state_ratio: 3                             # obs_state_dim = obs_state_ratio * state_dim
+
+state_obs: ['base_vel', 'base_ang_vel', 'projected_gravity', 'joint_pos', 'joint_vel', 'prev_action', 'velocity_commands_xy', 'velocity_commands_z'] # velocity ideal from devel branch, no height scan
+action_obs: ['action']
+
+# dt = 0.0012 s   this is the average delta time between observations.
+frames_per_state:  1                                 # Number of time-frames to use as a Markov Process state time step
+pred_horizon:      5 #30                                # Number (or percentage) of Markov Process state time steps to predict into the future
+eval_pred_horizon: ${system.pred_horizon}            # Number (or percentage) of Markov Process state time steps to predict into the future
+test_pred_horizon: 5
+
+recording_type: isaaclab
+task: amp
+dynamic_mode: '2025-06-20_12-29-39'
+
+data_path: '${system.name}/${system.recording_type}_recordings/${system.task}/${system.dynamic_mode}'
+
+summary: S:${system.dynamic_mode}-OS:${system.obs_state_ratio}-G:${system.group}-H:${system.pred_horizon}-EH:${system.eval_pred_horizon}
