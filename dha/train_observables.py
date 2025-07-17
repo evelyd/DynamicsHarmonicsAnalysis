@@ -101,6 +101,7 @@ def main(cfg: DictConfig):
 
         # Configure Lightning trainer
         trainer = Trainer(
+            accumulate_grad_batches=cfg.model.accumulation_steps if cfg.model.accumulation_steps else None,
             accelerator="cuda" if torch.cuda.is_available() and cfg.device != "cpu" else "cpu",
             devices=[cfg.device] if torch.cuda.is_available() and cfg.device != "cpu" else "auto",
             # gradient_clip_val=1.0,
@@ -128,6 +129,24 @@ def main(cfg: DictConfig):
             log_figs_every_n_epochs=10,
         )
         pl_model.set_model(model)
+
+        total_params = sum(p.numel() for p in pl_model.parameters())
+        print(f"Total parameters: {total_params}")
+
+        # Assume float32 for initial estimation (4 bytes per parameter)
+        estimated_memory_float32_bytes = total_params * 4
+        estimated_memory_float32_gib = estimated_memory_float32_bytes / (1024**3)
+        print(f"Estimated memory for model (float32): {estimated_memory_float32_gib:.2f} GiB")
+
+        # If using 16-bit precision, it would be half
+        estimated_memory_float16_gib = estimated_memory_float32_gib / 2
+        print(f"Estimated memory for model (float16): {estimated_memory_float16_gib:.2f} GiB")
+
+        # Also check buffers if your model has significant ones (e.g., BatchNorm running stats)
+        total_buffers = sum(b.numel() for b in pl_model.buffers())
+        print(f"Total buffers: {total_buffers}")
+
+        input(f"check lightning params")
 
         if cfg.debug_loops:
             profiler = cProfile.Profile()
