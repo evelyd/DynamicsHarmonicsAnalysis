@@ -9,7 +9,7 @@ max_epochs: 200
 early_stop_epochs: 30
 standardize: True
 
-obs_state_ratio: 3                             # obs_state_dim = obs_state_ratio * state_dim
+obs_state_ratio: 2                             # obs_state_dim = obs_state_ratio * state_dim
 
 state_obs: ['base_vel', 'base_ang_vel', 'projected_gravity', 'joint_pos', 'joint_vel', 'prev_action', 'velocity_commands_xy', 'velocity_commands_z'] # velocity ideal from devel branch, no height scan
 action_obs: ['action']

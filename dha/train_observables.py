@@ -101,7 +101,6 @@ def main(cfg: DictConfig):
 
         # Configure Lightning trainer
         trainer = Trainer(
-            accumulate_grad_batches=cfg.model.accumulation_steps if cfg.model.accumulation_steps else None,
             accelerator="cuda" if torch.cuda.is_available() and cfg.device != "cpu" else "cpu",
             devices=[cfg.device] if torch.cuda.is_available() and cfg.device != "cpu" else "auto",
             # gradient_clip_val=1.0,
@@ -115,6 +114,7 @@ def main(cfg: DictConfig):
             limit_train_batches=2 if cfg.debug_loops else 1.0,
             limit_test_batches=2 if cfg.debug_loops else 1.0,
             limit_val_batches=2 if cfg.debug_loops else 1.0,
+            precision="16-mixed",
         )
 
         # Load lightning module handling the operations of all model variants
@@ -145,6 +145,9 @@ def main(cfg: DictConfig):
         # Also check buffers if your model has significant ones (e.g., BatchNorm running stats)
         total_buffers = sum(b.numel() for b in pl_model.buffers())
         print(f"Total buffers: {total_buffers}")
+
+        for name, buffer in pl_model.named_buffers():
+            print(f"Buffer: {name}, Shape: {buffer.shape}, Numel: {buffer.numel()}")
 
         input(f"check lightning params")
 

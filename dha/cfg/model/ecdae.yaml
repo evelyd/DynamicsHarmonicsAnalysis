@@ -3,7 +3,3 @@ defaults:
 
 # bias: False # no bias so that the theoretical consistency of Koopman is fulfilled
 name: EC-DAE
-
-# Optimization hyperparameters parameters
-batch_size: 256 # this setting doesn't work with batch size 1024 due to memory issues
-accumulation_steps: 4 # accumulate gradients to simulate larger batch size
