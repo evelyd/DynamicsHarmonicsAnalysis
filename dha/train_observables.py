@@ -149,7 +149,7 @@ def main(cfg: DictConfig):
         for name, buffer in pl_model.named_buffers():
             print(f"Buffer: {name}, Shape: {buffer.shape}, Numel: {buffer.numel()}")
 
-        input(f"check lightning params")
+        # input(f"check lightning params")
 
         if cfg.debug_loops:
             profiler = cProfile.Profile()
@@ -175,7 +175,7 @@ def main(cfg: DictConfig):
         if training_successful:
             if not cfg.debug:  # Loading best model and test it
                 if best_path.exists():
-                    best_ckpt = torch.load(best_path)
+                    best_ckpt = torch.load(best_path, weights_only=False)
                     pl_model.eval()
                     pl_model.model.eval()
                     pl_model.load_state_dict(best_ckpt["state_dict"], strict=False)

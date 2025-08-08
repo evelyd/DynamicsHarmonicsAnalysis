@@ -34,7 +34,7 @@ def get_Rd_signals_on_kin_subchains(G: Group, rep_kin_three: Representation):
     rep_F.name = "R3_on_legs"
     return rep_F
 
-def convert_ergocub_isaaclab_recordings(data_paths: list):
+def convert_ergocub_isaaclab_recordings(data_paths: list, ideal: bool = False):
     """Convertion script for the recordings of observations from the Ergocub Robot.
 
     This function takes recordings stored into a single numpy array of shape (time, state_dim) where the state is
@@ -68,7 +68,8 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
     state = state_batched.transpose((1,0,2)).reshape(state_batched.shape[0] * state_batched.shape[1], -1)
     action = action_batched.transpose((1,0,2)).reshape(action_batched.shape[0] * action_batched.shape[1], -1)
     num_states = state.shape[-1]
-    assert num_states == 90, f"Expected 90 dimensions in the state, got {state.shape[-1]}"
+    desired_num_states = 90 if ideal else 357
+    assert num_states == desired_num_states, f"Expected {desired_num_states} dimensions in the state, got {state.shape[-1]}"
 
     dt = 0.01  # Time step of the simulation
 
@@ -127,31 +128,61 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
 
     # Define observation variables and their group representations
 
-    # Base body observations ___________________________________________________________________________________________
-    base_vel = state[:, :3]  # Rep: rep_Rd
-    base_ang_vel = state[:, 3:6]  # Rep: rep_euler_xyz
-    projected_gravity = state[:, 6:9] # Rep: red Rd
-    velocity_commands_xy = state[:, 87:89] # Rep: Rd for xy, euler xyz for heading
-    velocity_commands_z = state[:, 89][:, np.newaxis]
+    if ideal:
+        # Base body observations ___________________________________________________________________________________________
+        base_vel = state[:, :3]  # Rep: rep_Rd
+        base_ang_vel = state[:, 3:6]  # Rep: rep_euler_xyz
+        projected_gravity = state[:, 6:9] # Rep: red Rd
+        velocity_commands_xy = state[:, 87:89] # Rep: Rd for xy, euler xyz for heading
+        velocity_commands_z = state[:, 89][:, np.newaxis]
 
-    # Joint-Space observations _________________________________________________________________________________________
+        # Joint-Space observations _________________________________________________________________________________________
 
-    # Fill in zeros for all the joint-space obs for joints that are in ms but not isaaclab
-    usd_name_to_vel_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 35:61].T)} # type: ignore
-    joint_vel = np.stack([
-        usd_name_to_vel_map.get(joint_name, np.zeros(state.shape[0]))
-        for joint_name in joint_order_for_morphosymm
-    ], axis=1)
-    usd_name_to_pos_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 9:35].T)} # type: ignore
-    joint_pos = np.stack([
-        usd_name_to_pos_map.get(joint_name, np.zeros(state.shape[0]))
-        for joint_name in joint_order_for_morphosymm
-    ], axis=1)
-    usd_name_to_prev_action_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 61:87].T)} # type: ignore
-    prev_action = np.stack([
-        usd_name_to_prev_action_map.get(joint_name, np.zeros(state.shape[0]))
-        for joint_name in joint_order_for_morphosymm
-    ], axis=1)
+        # Fill in zeros for all the joint-space obs for joints that are in ms but not isaaclab
+        usd_name_to_vel_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 35:61].T)} # type: ignore
+        joint_vel = np.stack([
+            usd_name_to_vel_map.get(joint_name, np.zeros(state.shape[0]))
+            for joint_name in joint_order_for_morphosymm
+        ], axis=1)
+        usd_name_to_pos_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 9:35].T)} # type: ignore
+        joint_pos = np.stack([
+            usd_name_to_pos_map.get(joint_name, np.zeros(state.shape[0]))
+            for joint_name in joint_order_for_morphosymm
+        ], axis=1)
+        usd_name_to_prev_action_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 61:87].T)} # type: ignore
+        prev_action = np.stack([
+            usd_name_to_prev_action_map.get(joint_name, np.zeros(state.shape[0]))
+            for joint_name in joint_order_for_morphosymm
+        ], axis=1)
+
+        # Subsample the data by skippig by ignoring odd frames. ============================================================
+        dt_subsample = 1
+        base_vel = base_vel[::dt_subsample]
+    else:
+        # Base body observations ___________________________________________________________________________________________
+        base_ang_vel = state[:, 27:30]  # Rep: rep_euler_xyz
+        projected_gravity = state[:, 57:60] # Rep: red Rd
+        velocity_commands_xy = state[:, 354:356] # Rep: Rd for xy, euler xyz for heading
+        velocity_commands_z = state[:, 356][:, np.newaxis]
+
+        # Joint-Space observations _________________________________________________________________________________________
+
+        # Fill in zeros for all the joint-space obs for joints that are in ms but not isaaclab
+        usd_name_to_vel_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 326:340].T)} # type: ignore
+        joint_vel = np.stack([
+            usd_name_to_vel_map.get(joint_name, np.zeros(state.shape[0]))
+            for joint_name in joint_order_for_morphosymm
+        ], axis=1)
+        usd_name_to_pos_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 186:200].T)} # type: ignore
+        joint_pos = np.stack([
+            usd_name_to_pos_map.get(joint_name, np.zeros(state.shape[0]))
+            for joint_name in joint_order_for_morphosymm
+        ], axis=1)
+        usd_name_to_prev_action_map = {name: pos for name, pos in zip(usd_joint_order, state[:, 340:354].T)} # type: ignore
+        prev_action = np.stack([
+            usd_name_to_prev_action_map.get(joint_name, np.zeros(state.shape[0]))
+            for joint_name in joint_order_for_morphosymm
+        ], axis=1)
 
     # Joint-Space actions ============================================================
 
@@ -163,7 +194,7 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
 
     # Subsample the data by skippig by ignoring odd frames. ============================================================
     dt_subsample = 1
-    base_vel = base_vel[::dt_subsample]
+    # base_vel = base_vel[::dt_subsample]
     base_ang_vel = base_ang_vel[::dt_subsample]
     projected_gravity = projected_gravity[::dt_subsample]
     joint_pos = joint_pos[::dt_subsample]
@@ -178,7 +209,7 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
         info=dict(num_traj=1, trajectory_length=state.shape[0]),
         dynamics_parameters=dict(dt=dt * dt_subsample, group=dict(group_name=G.name, group_order=G.order())),
         recordings=dict(
-            base_vel=base_vel[None, ...].astype(np.float32),
+            # base_vel=base_vel[None, ...].astype(np.float32),
             base_ang_vel=base_ang_vel[None, ...].astype(np.float32),
             projected_gravity=projected_gravity[None, ...].astype(np.float32),
             joint_pos=joint_pos[None, ...].astype(np.float32),
@@ -189,7 +220,8 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
             action=action[None, ...].astype(np.float32),
         ),
         state_obs=(
-            'base_vel', 'base_ang_vel', 'projected_gravity', 'joint_pos', 'joint_vel', 'prev_action', 'velocity_commands_xy', 'velocity_commands_z'
+            # 'base_vel',
+            'base_ang_vel', 'projected_gravity', 'joint_pos', 'joint_vel', 'prev_action', 'velocity_commands_xy', 'velocity_commands_z'
         ),
         action_obs=("action",),
         obs_representations=dict(
@@ -199,7 +231,7 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
             # Base body observations
             velocity_commands_xy=rep_xy,
             velocity_commands_z=rep_euler_z,
-            base_vel=rep_Rd,
+            # base_vel=rep_Rd,
             projected_gravity=rep_Rd,
             base_ang_vel=rep_euler_xyz,
             action=rep_TqQ_js,
@@ -223,9 +255,11 @@ def convert_ergocub_isaaclab_recordings(data_paths: list):
 
 
 if __name__ == "__main__":
-    tasks = ["amp"]
-    modes = ["2025-06-20_12-29-39"]
+    tasks = ["amp_velocity"]
+    # modes = ["2025-06-20_12-29-39"]
+    modes = ["2025-08-06_13-51-38"]
+    ideal = False
     for task in tasks:
         for mode in modes:
             data_paths = list(Path(f"data/ergocub/isaaclab_recordings/{task}/{mode}/raw_recording").glob("*.npy"))
-            convert_ergocub_isaaclab_recordings(data_paths)
+            convert_ergocub_isaaclab_recordings(data_paths, ideal=ideal)
